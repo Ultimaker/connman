@@ -214,6 +214,19 @@ struct domain_rr {
  */
 #define MAX_CACHE_SIZE 256
 
+static bool captive_portal_enabled = false;
+static bool has_tether_cache_entry = false;
+static bool show_debug_dns_packet_data = false;
+static struct cache_entry *tether_cache_entry = NULL;
+static struct cache_data *tether_cache_data_ipv4 = NULL;
+static struct cache_data *tether_cache_data_ipv6 = NULL;
+static unsigned char *tether_dns_packet_data_ipv4 = NULL;
+static unsigned char *tether_dns_packet_data_ipv6 = NULL;
+static int tether_dns_packet_data_ipv4_len = 0;
+static int tether_dns_packet_data_ipv6_len = 0;
+static struct in_addr tether_in4_addr;
+static struct in6_addr tether_in6_addr;
+
 static int cache_size;
 static GHashTable *cache;
 static int cache_refcount;
@@ -414,6 +427,99 @@ static void update_cached_ttl(unsigned char *buf, int len, int new_ttl)
 	}
 }
 
+static char *dns_packet_type(bool response)
+{
+	if (response)
+		return "response: ";
+	else
+		return "request: ";
+}
+
+static int debug_dns_packet_header(bool response, unsigned char *ptr)
+{
+	struct domain_hdr *hdr;
+	char *packet_type = dns_packet_type(response);
+
+	hdr = (struct domain_hdr *) ptr;
+	DBG("%sid 0x%04x qr %d opcode %d aa %d tc %d rd %d ra %d z %d rcode %d",
+		packet_type, hdr->id, hdr->qr, hdr->opcode, hdr->aa, 
+		hdr->tc, hdr->rd, hdr->ra, hdr->z, hdr->rcode);
+	DBG("    qdcount %d ancount %d nscount %d arcount %d", 
+		ntohs(hdr->qdcount), ntohs(hdr->ancount), ntohs(hdr->nscount), 
+		ntohs(hdr->arcount));
+
+	return sizeof(struct domain_hdr);
+}
+
+static int debug_dns_packet_question(bool response, unsigned char *ptr, 
+					uint16_t *qtype)
+{
+	char *qname;
+	struct domain_question *q;
+	char *packet_type = dns_packet_type(response);
+
+	qname = (char *) ptr;
+	q = (struct domain_question *) (ptr + strlen(qname) + 1);
+	DBG("%sqname %s, qtype %d, qclass %d", 
+		packet_type, qname, ntohs(q->type), ntohs(q->class)); 
+	*qtype = ntohs(q->type);
+
+	return strlen(qname) + 1 + sizeof(struct domain_question);
+}
+
+static int debug_dns_packet_answer(unsigned char *ptr, bool is_ipv4)
+{
+	char *name;
+	struct domain_rr *rr;
+	unsigned char * rdata;
+	uint32_t data_ipv4, *data_ipv4_n;
+
+	name = (char *) ptr;
+	rr = (struct domain_rr *) (ptr + strlen(name) + 1);
+	DBG("name %s, type %d, class %d, ttl %d, rdlength %d", 
+		name, ntohs(rr->type), ntohs(rr->class), ntohl(rr->ttl), 
+		ntohs(rr->rdlen));
+
+	rdata = ptr + strlen(name) + 1 + sizeof(struct domain_rr);
+	if (is_ipv4) { /* a record = ipv4 host addres */
+		data_ipv4_n = (uint32_t *) rdata;
+		data_ipv4 = ntohl(*data_ipv4_n);
+		DBG("rdata (ipv4) 0x%08x", data_ipv4);
+	} else { /* aaa record = ipv6 host address */
+		DBG("rdata (ipv6) %x%x:%x%x:%x%x:%x%x:%x%x:%x%x:%x%x:%x%x",
+		rdata[0],  rdata[1],  rdata[2],  rdata[3], 
+		rdata[4],  rdata[5],  rdata[6],  rdata[7], 
+		rdata[8],  rdata[9],  rdata[10], rdata[11], 
+		rdata[12], rdata[13], rdata[14], rdata[15]);
+	}
+
+	return strlen(name) + 1 + sizeof(struct domain_rr) + ntohs(rr->rdlen);
+}
+
+static void debug_dns_packet_data(unsigned char *ptr)
+{
+	int hdr_size, question_size, answer_size, packet_size;
+	bool response = true, is_ipv4 = false;
+	uint16_t qtype;
+
+	DBG("dns packet begin pointer %p", ptr);
+
+	hdr_size = debug_dns_packet_header(response, ptr);
+	ptr += hdr_size;
+
+	question_size = debug_dns_packet_question(response, ptr, &qtype);
+	ptr += question_size;
+	if (qtype == 1) /* a record = ipv4 host addres */
+		is_ipv4 = true;
+
+	answer_size = debug_dns_packet_answer(ptr, is_ipv4);
+	ptr += answer_size;
+
+	packet_size = hdr_size + question_size + answer_size;
+	/* No authority and additional records */
+	DBG("dns packet end pointer %p, packet size %d", ptr, packet_size);
+}
+
 static void send_cached_response(int sk, unsigned char *buf, int len,
 				const struct sockaddr *to, socklen_t tolen,
 				int protocol, int id, uint16_t answers, int ttl)
@@ -459,11 +565,15 @@ static void send_cached_response(int sk, unsigned char *buf, int len,
 	else
 		update_cached_ttl((unsigned char *)hdr, adj_len, ttl);
 
-	debug("sk %d id 0x%04x answers %d ptr %p length %d dns %d",
-		sk, hdr->id, answers, ptr, len, dns_len);
+	DBG("sk %d id 0x%04x answers %d ptr %p length %d dns %d ttl %d",
+		sk, hdr->id, answers, ptr, len, dns_len, ttl);
+
+	if (show_debug_dns_packet_data)
+		debug_dns_packet_data(ptr + offset);
 
 	err = sendto(sk, ptr, len, MSG_NOSIGNAL, to, tolen);
 	if (err < 0) {
+		DBG("Cannot send cached DNS response: %s", strerror(errno));
 		connman_error("Cannot send cached DNS response: %s",
 				strerror(errno));
 		return;
@@ -796,43 +906,299 @@ static void create_cache(void)
 					cache_element_destroy);
 }
 
-static struct cache_entry *cache_check(gpointer request, int *qtype, int proto)
+static int get_tether_dns_packet_header(gpointer request, unsigned char *data)
+{
+	bool response;
+	unsigned char *hdata;
+	struct domain_hdr *hdr;
+
+	response = false;
+	if (show_debug_dns_packet_data)
+		debug_dns_packet_header(response, request);
+
+	hdata = data;
+
+	/* Copy dns header from dns request */
+	memcpy(hdata, request, sizeof(struct domain_hdr));
+
+	/* Set relevant fields in dns header of response */
+	hdr = (struct domain_hdr *) hdata;
+	hdr->aa = 1;
+	hdr->ra = 1;
+
+	response = true;
+	if (show_debug_dns_packet_data)
+		debug_dns_packet_header(response, data);
+
+	return sizeof(struct domain_hdr);
+}
+
+static int get_tether_dns_packet_question(gpointer request, char *name, 
+			uint16_t type, uint16_t class, unsigned char *data)
+{
+	bool response;
+	uint16_t qtype;
+	unsigned char *qdata;
+	int name_length;
+	struct domain_question *q;
+
+	response = false;
+	if (show_debug_dns_packet_data)
+		debug_dns_packet_question(response, request, &qtype);
+	DBG("request qtype %d", qtype); 
+
+	qdata = data;
+
+	/* Copy name to dns question of response */
+	name_length = strlen(name) + 1;
+	memcpy(qdata, name, name_length);
+	qdata += name_length;
+
+	/* Copy type and class to dns question of response */
+	q = (struct domain_question *) qdata;
+	q->type = htons(type);
+	q->class = htons(class);
+
+	response = true;
+	if (show_debug_dns_packet_data)
+		debug_dns_packet_question(response, data, &type);
+	DBG("response qtype %d", qtype); 
+
+	return name_length + sizeof(struct domain_question);
+}
+
+static int get_tether_dns_packet_answer(char *name, uint16_t type, 
+			uint16_t class, bool is_ipv4, unsigned char *data)
+{
+	unsigned char *adata;
+	int name_length;
+	struct domain_rr *rr;
+	uint16_t rdlen;
+
+	adata = data;
+
+	/* Copy name to dns answer */
+	name_length = strlen(name) + 1;
+	memcpy(adata, name, name_length);
+	adata += name_length;
+
+	/* Give type, class, ttl, rdlength and rdata of dns answer a value */
+	rr = (struct domain_rr *) adata;
+	rr->type = htons(type);
+	rr->class = htons(class);
+	rr->ttl = htonl(0);
+	adata += sizeof(struct domain_rr);	/* points to rdata */
+	if (is_ipv4) {
+		rdlen = sizeof(tether_in4_addr);
+		memcpy(adata, &tether_in4_addr, rdlen);
+	} else { // ipv6
+		rdlen = sizeof(tether_in6_addr);
+		memcpy(adata, &tether_in6_addr, rdlen);
+	}
+	rr->rdlen = htons(rdlen);
+
+	if (show_debug_dns_packet_data)
+		debug_dns_packet_answer(data, is_ipv4);
+
+	return name_length + sizeof(struct domain_rr) + rdlen;
+}
+
+static unsigned char *get_tether_dns_packet_data(gpointer request, 
+				uint16_t type, int16_t class, bool is_ipv4, 
+				struct request_data *req, char *name, 
+				unsigned int *tether_dns_packet_data_len)
+{
+	unsigned char *tether_dns_packet_data, *data, *requestptr;
+	int tcp_data_length_offset, hdr_size, question_size, answer_size;
+
+	DBG("type %d class %d is_ipv4 %d, name %s", type, class, is_ipv4, name);
+
+	tcp_data_length_offset = 2;
+	*tether_dns_packet_data_len = 
+		tcp_data_length_offset + req->request_len + strlen(name) + 1 + 
+		sizeof(struct domain_rr);
+
+	if (is_ipv4) {
+		g_free(tether_dns_packet_data_ipv4);
+		*tether_dns_packet_data_len += sizeof(tether_in4_addr);
+		tether_dns_packet_data_ipv4_len = *tether_dns_packet_data_len;
+		tether_dns_packet_data_ipv4 = 
+			(unsigned char *) g_malloc(*tether_dns_packet_data_len);
+		tether_dns_packet_data = tether_dns_packet_data_ipv4;
+	} else { // ipv6
+		g_free(tether_dns_packet_data_ipv6);
+		*tether_dns_packet_data_len += sizeof(tether_in6_addr);
+		tether_dns_packet_data_ipv6_len = *tether_dns_packet_data_len;
+		tether_dns_packet_data_ipv6 = 
+			(unsigned char *) g_malloc(*tether_dns_packet_data_len);
+		tether_dns_packet_data = tether_dns_packet_data_ipv6;
+	}
+
+	DBG("tether dns packet data begin ptr %p, tether dns packet size %d)", 
+		(void *) tether_dns_packet_data, *tether_dns_packet_data_len);
+	data = tether_dns_packet_data;
+
+	/* Set data length for TCP */
+	data[0] = (*tether_dns_packet_data_len - 2) / 256;
+	data[1] = (*tether_dns_packet_data_len - 2) - data[0] * 256;
+	data += tcp_data_length_offset;
+
+	requestptr = request;
+	requestptr += protocol_offset(req->protocol);
+
+	hdr_size = get_tether_dns_packet_header(requestptr, data);
+	data += hdr_size;
+	requestptr += hdr_size;
+
+	question_size = 
+		get_tether_dns_packet_question(requestptr, name, type, class, 
+			data);
+	data += question_size;
+
+	answer_size = 
+		get_tether_dns_packet_answer(name, type, class, is_ipv4, data);
+	data += answer_size;
+
+	DBG("tether dns packet data end ptr %p", data);
+
+	return tether_dns_packet_data;
+}
+
+static struct cache_data *get_tether_cache_data(gpointer request, 
+				uint16_t type, int16_t class, bool is_ipv4, 
+				struct request_data *req, char *name)
+{
+	struct cache_data *data;
+	time_t current_time = time(NULL);
+	int ttl = MAX_CACHE_TTL;
+
+	DBG("type %d class %d is_ipv4 %d name %s", type, class, is_ipv4, name);
+
+	if (is_ipv4)
+		data = tether_cache_data_ipv4;
+	else
+		data = tether_cache_data_ipv6;
+
+	data->inserted = current_time;
+	data->valid_until = current_time + ttl;
+	data->cache_until = round_down_ttl(current_time + ttl, ttl);
+	data->timeout = ttl;
+	data->type = type;
+	data->answers = 1;
+	DBG("inserted %d valid_until %d cache_until %d timeout %d answers %d", 
+		(int) data->inserted, (int) data->valid_until, 
+		(int) data->cache_until, data->timeout, data->answers);
+
+	data->data = get_tether_dns_packet_data(request, type, class, is_ipv4, 
+			req, name, &data->data_len);
+	DBG("data_len %d", data->data_len);
+
+	return data;
+}
+
+static struct cache_entry *get_tether_cache_entry(gpointer request, 
+				uint16_t type, uint16_t class, 
+				struct request_data *req, char *name)
+{
+	struct cache_entry *entry = tether_cache_entry;
+	bool is_ipv4 = true;
+
+	entry->key = g_strdup(name);
+	entry->want_refresh = true;
+	entry->hits = 3;
+	DBG("type %d, class %d, name %s, key %s, want_refresh %d, hits %d", 
+		type, class, name, entry->key, entry->want_refresh, 
+		entry->hits);
+
+	entry->ipv4 = 
+		get_tether_cache_data(request, type, class, is_ipv4, req, name);
+	is_ipv4 = false;
+	entry->ipv6 = 
+	get_tether_cache_data(request, type, class, is_ipv4, req, name);
+
+	return entry;
+}
+
+static bool is_tether_index(int index)
+{
+	bool ret = false;
+
+	if (index == connman_inet_ifindex(__connman_tethering_get_bridge()))
+		ret = true;
+
+	DBG("returns %d", ret);
+	return ret;
+}
+
+static bool is_request_from_tether_if(struct request_data *req)
+{
+	bool ret = false;
+
+	if (is_tether_index(req->ifdata->index))
+		ret = true;
+
+	DBG("returns %d", ret);
+	return ret;
+}
+
+static struct cache_entry *cache_check(gpointer request, int *qtype, 
+				struct request_data *req)
 {
 	char *question;
 	struct cache_entry *entry;
 	struct domain_question *q;
-	uint16_t type;
+	uint16_t type, class;
 	int offset, proto_offset;
 
-	if (!request)
+	if (!request) {
+		DBG("request %p == NULL", (void *) req);
 		return NULL;
+	}
 
-	proto_offset = protocol_offset(proto);
-	if (proto_offset < 0)
+	proto_offset = protocol_offset(req->protocol);
+	if (proto_offset < 0) {
+		DBG("proto_offset %d < 0", proto_offset);
 		return NULL;
+	}
 
 	question = request + proto_offset + 12;
 
 	offset = strlen(question) + 1;
 	q = (void *) (question + offset);
 	type = ntohs(q->type);
+	class = ntohs(q->class);
 
 	/* We only cache either A (1) or AAAA (28) requests */
-	if (type != 1 && type != 28)
+	if (type != 1 && type != 28) {
+		DBG("type %d != 1 and != 28", type);
 		return NULL;
+	}
 
 	if (!cache) {
+		DBG("cache %p == NULL", (void *) cache);
 		create_cache();
 		return NULL;
 	}
 
-	entry = g_hash_table_lookup(cache, question);
-	if (!entry)
+	DBG("type %d has_tether_cache_entry %d is_request_from_tether_if %d", 
+		type, has_tether_cache_entry, is_request_from_tether_if(req));
+	if (has_tether_cache_entry && is_request_from_tether_if(req) 
+			/*&& strstr(question, "google") != NULL */)
+		entry = get_tether_cache_entry(request, type, class, req, 
+				question);
+	else
+		entry = g_hash_table_lookup(cache, question);
+
+	if (!entry) {
+		DBG("entry %p == NULL", (void *) entry);
 		return NULL;
+	}
 
 	type = cache_check_validity(question, type, entry);
-	if (type == 0)
+	if (type == 0) {
+		DBG("type %d == 0", type);
 		return NULL;
+	}
 
 	*qtype = type;
 	return entry;
@@ -1607,6 +1973,15 @@ static int cache_update(struct server_data *srv, unsigned char *msg,
 	return 0;
 }
 
+static int error_no_cached_response_sent(void)
+{
+	int err = -ECOMM;
+
+	DBG("returns %d", err);
+
+	return err;
+}
+
 static int ns_resolv(struct server_data *server, struct request_data *req,
 				gpointer request, gpointer name)
 {
@@ -1615,7 +1990,10 @@ static int ns_resolv(struct server_data *server, struct request_data *req,
 	char *dot, *lookup = (char *) name;
 	struct cache_entry *entry;
 
-	entry = cache_check(request, &type, req->protocol);
+	DBG("lookup %s has_tether_cache_entry %d is_request_from_tether_if %d", 
+		lookup, has_tether_cache_entry, is_request_from_tether_if(req));
+
+	entry = cache_check(request, &type, req);
 	if (entry) {
 		int ttl_left = 0;
 		struct cache_data *data;
@@ -1651,6 +2029,9 @@ static int ns_resolv(struct server_data *server, struct request_data *req,
 			return 1;
 		}
 	}
+
+	if (has_tether_cache_entry && !server_list)
+		return error_no_cached_response_sent();
 
 	sk = g_io_channel_unix_get_fd(server->channel);
 
@@ -2603,7 +2984,7 @@ static struct server_data *create_server(int index,
 	ret = getaddrinfo(data->server, "53", &hints, &rp);
 	if (ret) {
 		connman_error("Failed to parse server %s address: %s\n",
-			      data->server, gai_strerror(ret));
+				data->server, gai_strerror(ret));
 		destroy_server(data);
 		return NULL;
 	}
@@ -2656,13 +3037,28 @@ static struct server_data *create_server(int index,
 	return data;
 }
 
-static bool resolv(struct request_data *req,
+static int resolv_empty_server_list(struct server_data *data, 
+		struct request_data *req, gpointer request, gpointer name)
+{
+	int ret;
+
+	ret = ns_resolv(data, req, request, name);
+	DBG("returns %d", ret);
+
+	return ret;
+}
+
+static int resolv(struct request_data *req,
 				gpointer request, gpointer name)
 {
 	GSList *list;
+	struct server_data *data = NULL;
+
+	if (has_tether_cache_entry && !server_list)
+		return resolv_empty_server_list(data, req, request, name);
 
 	for (list = server_list; list; list = list->next) {
-		struct server_data *data = list->data;
+		data = list->data;
 
 		if (data->protocol == IPPROTO_TCP) {
 			DBG("server %s ignored proto TCP", data->server);
@@ -2682,10 +3078,10 @@ static bool resolv(struct request_data *req,
 		}
 
 		if (ns_resolv(data, req, request, name) > 0)
-			return true;
+			return 1;
 	}
 
-	return false;
+	return 0;
 }
 
 static void update_domain(int index, const char *domain, bool append)
@@ -3092,7 +3488,11 @@ read_another:
 
 	err = parse_request(client->buf + 2, msg_len,
 			query, sizeof(query));
-	if (err < 0 || (g_slist_length(server_list) == 0)) {
+	if (err < 0 || 
+		(g_slist_length(server_list) == 0 && !has_tether_cache_entry)) {
+		DBG("err %d length(server_list) %d has_tether_cache_entry %d", 
+			err, g_slist_length(server_list), 
+			has_tether_cache_entry);
 		send_response(client_sk, client->buf, msg_len + 2,
 			NULL, 0, IPPROTO_TCP);
 		return true;
@@ -3124,7 +3524,7 @@ read_another:
 	 * Check if the answer is found in the cache before
 	 * creating sockets to the server.
 	 */
-	entry = cache_check(client->buf, &qtype, IPPROTO_TCP);
+	entry = cache_check(client->buf, &qtype, req);
 	if (entry) {
 		int ttl_left = 0;
 		struct cache_data *data;
@@ -3475,6 +3875,22 @@ static gboolean tcp6_listener_event(GIOChannel *channel, GIOCondition condition,
 				&ifdata->tcp6_listener_watch);
 }
 
+static bool handle_empty_server_list_error(int err, int sk, unsigned char *buf, 
+		int len, void *client_addr, socklen_t *client_addr_len)
+{
+	bool ret = false;
+
+	DBG("err %d", err);
+	if (err == error_no_cached_response_sent()) {
+		DBG("send_response");
+		send_response(sk, buf, len, client_addr, 
+			*client_addr_len, IPPROTO_UDP);
+		ret = true;
+	}
+
+	return ret;
+}
+
 static bool udp_listener_event(GIOChannel *channel, GIOCondition condition,
 				struct listener_data *ifdata, int family,
 				guint *listener_watch)
@@ -3488,7 +3904,7 @@ static bool udp_listener_event(GIOChannel *channel, GIOCondition condition,
 	socklen_t client_addr4_len = sizeof(client_addr4);
 	void *client_addr;
 	socklen_t *client_addr_len;
-	int sk, err, len;
+	int sk, err, len, ret;
 
 	if (condition & (G_IO_NVAL | G_IO_ERR | G_IO_HUP)) {
 		connman_error("Error with UDP listener channel");
@@ -3514,7 +3930,11 @@ static bool udp_listener_event(GIOChannel *channel, GIOCondition condition,
 	debug("Received %d bytes (id 0x%04x)", len, buf[0] | buf[1] << 8);
 
 	err = parse_request(buf, len, query, sizeof(query));
-	if (err < 0 || (g_slist_length(server_list) == 0)) {
+	if (err < 0 || 
+		(g_slist_length(server_list) == 0 && !has_tether_cache_entry)) {
+		DBG("err %d length(server_list) %d has_tether_cache_entry %d", 
+			err, g_slist_length(server_list), 
+			has_tether_cache_entry);
 		send_response(sk, buf, len, client_addr,
 				*client_addr_len, IPPROTO_UDP);
 		return true;
@@ -3542,11 +3962,18 @@ static bool udp_listener_event(GIOChannel *channel, GIOCondition condition,
 	req->ifdata = ifdata;
 	req->append_domain = false;
 
-	if (resolv(req, buf, query)) {
+	ret = resolv(req, buf, query);
+
+	if (ret > 0) {
 		/* a cached result was sent, so the request can be released */
-	        g_free(req);
+		g_free(req);
 		return true;
-	}
+	} else if (has_tether_cache_entry)
+		if (handle_empty_server_list_error(ret, sk, buf, len, 
+			client_addr, client_addr_len)) {
+			g_free(req);
+			return true;
+		}
 
 	req->name = g_strdup(query);
 	req->request = g_malloc(len);
@@ -3554,6 +3981,7 @@ static bool udp_listener_event(GIOChannel *channel, GIOCondition condition,
 	req->timeout = g_timeout_add_seconds(5, request_timeout, req);
 	request_list = g_slist_append(request_list, req);
 
+	DBG ("name %s, timout %d", (char *) req->name, (int) req->timeout);
 	return true;
 }
 
@@ -3687,6 +4115,16 @@ static GIOChannel *get_listener(int family, int protocol, int index)
 		connman_error("Failed to create %s listener channel", proto);
 		close(sk);
 		return NULL;
+	}
+
+	if (has_tether_cache_entry && is_tether_index(index)) {
+		if (family == AF_INET6)
+			memcpy(&tether_in6_addr, &s.sin6.sin6_addr, 
+				sizeof(tether_in6_addr));
+
+		else // family == AF_INET
+			memcpy(&tether_in4_addr, &s.sin.sin_addr, 
+				sizeof(tether_in4_addr));
 	}
 
 	g_io_channel_set_close_on_unref(channel, TRUE);
@@ -3836,6 +4274,17 @@ static void destroy_listener(struct listener_data *ifdata)
 	destroy_udp_listener(ifdata);
 }
 
+static void set_tether_cache_entry(bool enabled)
+{
+	/* Cache pollution */
+	has_tether_cache_entry = enabled;
+	DBG("has_tether_cache_entry %d", has_tether_cache_entry);
+
+	/* Show fields of DNS packets */
+	show_debug_dns_packet_data = enabled;
+	DBG("show_debug_dns_packet_data %d", show_debug_dns_packet_data);
+}
+
 int __connman_dnsproxy_add_listener(int index)
 {
 	struct listener_data *ifdata;
@@ -3866,15 +4315,21 @@ int __connman_dnsproxy_add_listener(int index)
 	ifdata->tcp6_listener_channel = NULL;
 	ifdata->tcp6_listener_watch = 0;
 
+	if (captive_portal_enabled && is_tether_index(index))
+		set_tether_cache_entry(true);
+
 	err = create_listener(ifdata);
 	if (err < 0) {
 		connman_error("Couldn't create listener for index %d err %d",
 				index, err);
 		g_free(ifdata);
+		if (captive_portal_enabled && is_tether_index(index))
+			set_tether_cache_entry(false);
 		return err;
 	}
 	g_hash_table_insert(listener_table, GINT_TO_POINTER(ifdata->index),
 			ifdata);
+
 	return 0;
 }
 
@@ -3883,6 +4338,9 @@ void __connman_dnsproxy_remove_listener(int index)
 	struct listener_data *ifdata;
 
 	DBG("index %d", index);
+
+	if (captive_portal_enabled && is_tether_index(index))
+		set_tether_cache_entry(false);
 
 	if (!listener_table)
 		return;
@@ -3906,6 +4364,7 @@ static void remove_listener(gpointer key, gpointer value, gpointer user_data)
 	destroy_listener(ifdata);
 }
 
+
 static void free_partial_reqs(gpointer value)
 {
 	struct tcp_partial_client_data *data = value;
@@ -3914,11 +4373,51 @@ static void free_partial_reqs(gpointer value)
 	g_free(data);
 }
 
-int __connman_dnsproxy_init(void)
+static int captive_portal_init(void)
+{
+	tether_cache_entry = g_try_new(struct cache_entry, 1);
+	DBG("tether_cache_entry pointer %p with size %d)", 
+		(void *) tether_cache_entry, (int) sizeof(struct cache_entry));
+	if (!tether_cache_entry)
+		return -ENOMEM;
+
+	tether_cache_data_ipv4 = g_try_new(struct cache_data, 1);
+	DBG("tether_cache_data_ipv4 pointer %p with size %d)", 
+		(void *) tether_cache_data_ipv4, (int) sizeof(struct cache_data));
+	if (!tether_cache_data_ipv4) {
+		g_free(tether_cache_entry);
+		return -ENOMEM;
+	}
+
+	tether_cache_data_ipv6 = g_try_new(struct cache_data, 1);
+	DBG("tether_cache_data_ipv6 pointer %p with size %d)", 
+		(void *) tether_cache_data_ipv6, (int) sizeof(struct cache_data));
+	if (!tether_cache_data_ipv6) {
+		g_free(tether_cache_entry);
+		g_free(tether_cache_data_ipv4);
+		return -ENOMEM;
+	}
+
+	DBG("tether_in4_addr 0x%08x", tether_in4_addr.s_addr);
+
+	DBG("tether_in6_addr %x%x:%x%x:%x%x:%x%x:%x%x:%x%x:%x%x:%x%x", 
+		tether_in6_addr.s6_addr[0],  tether_in6_addr.s6_addr[2], 
+		tether_in6_addr.s6_addr[2],  tether_in6_addr.s6_addr[3], 
+		tether_in6_addr.s6_addr[4],  tether_in6_addr.s6_addr[5], 
+		tether_in6_addr.s6_addr[6],  tether_in6_addr.s6_addr[7], 
+		tether_in6_addr.s6_addr[8],  tether_in6_addr.s6_addr[9], 
+		tether_in6_addr.s6_addr[10], tether_in6_addr.s6_addr[11], 
+		tether_in6_addr.s6_addr[12], tether_in6_addr.s6_addr[13], 
+		tether_in6_addr.s6_addr[14], tether_in6_addr.s6_addr[15]);
+
+	return 0;
+}
+
+int __connman_dnsproxy_init(gboolean captive_portal)
 {
 	int err, index;
 
-	DBG("");
+	DBG("captive_portal %d", captive_portal);
 
 	listener_table = g_hash_table_new_full(g_direct_hash, g_direct_equal,
 							NULL, g_free);
@@ -3937,6 +4436,17 @@ int __connman_dnsproxy_init(void)
 	if (err < 0)
 		goto destroy;
 
+	if (captive_portal) {
+		if (captive_portal_init() < 0) {
+			/* Fall back to no captive portal */
+			return 0;
+		}
+
+		captive_portal_enabled = true;
+		DBG("captive_portal_enabled %d", 
+			captive_portal_enabled);
+	}
+
 	return 0;
 
 destroy:
@@ -3950,6 +4460,34 @@ destroy:
 int __connman_dnsproxy_set_mdns(int index, bool enabled)
 {
 	return -ENOTSUP;
+}
+
+static void captive_portal_cleanup(void)
+{
+	DBG("tether_cache_entry pointer %p with size %d)", 
+		(void *) tether_cache_entry, 
+		(int) sizeof(struct cache_entry));
+	g_free(tether_cache_entry);
+
+	DBG("tether_cache_data_ipv4 pointer %p with size %d)", 
+		(void *) tether_cache_data_ipv4, 
+		(int) sizeof(struct cache_data));
+	g_free(tether_cache_data_ipv4);
+
+	DBG("tether_cache_data_ipv6 pointer %p with size %d)", 
+		(void *) tether_cache_data_ipv6, 
+		(int) sizeof(struct cache_data));
+	g_free(tether_cache_data_ipv6);
+
+	DBG("tether_dns_packet_data_ipv4 pointer %p with size %d)", 
+		(void *) tether_dns_packet_data_ipv4, 
+		tether_dns_packet_data_ipv4_len);
+	g_free(tether_dns_packet_data_ipv4);
+
+	DBG("tether_dns_packet_data_ipv6 pointer %p with size %d)", 
+		(void *) tether_dns_packet_data_ipv6, 
+		tether_dns_packet_data_ipv6_len);
+	g_free(tether_dns_packet_data_ipv6);
 }
 
 void __connman_dnsproxy_cleanup(void)
@@ -3973,4 +4511,8 @@ void __connman_dnsproxy_cleanup(void)
 	g_hash_table_destroy(listener_table);
 
 	g_hash_table_destroy(partial_tcp_req_table);
+
+	DBG("captive_portal_enabled %d", captive_portal_enabled);
+	if (captive_portal_enabled)
+		captive_portal_cleanup();
 }

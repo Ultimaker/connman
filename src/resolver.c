@@ -660,12 +660,13 @@ int __connman_resolver_set_mdns(int index, bool enabled)
 	return __connman_dnsproxy_set_mdns(index, enabled);
 }
 
-int __connman_resolver_init(gboolean dnsproxy)
+int __connman_resolver_init(gboolean dnsproxy, gboolean dnsproxy_captiveportal)
 {
 	int i;
 	char **ns;
 
-	DBG("dnsproxy %d", dnsproxy);
+	DBG("dnsproxy %d, dnsproxy_captiveportal %d", 
+		dnsproxy, dnsproxy_captiveportal);
 
 	/* get autoip nameservers */
 	ns = __connman_inet_get_pnp_nameservers(NULL);
@@ -678,7 +679,7 @@ int __connman_resolver_init(gboolean dnsproxy)
 	if (!dnsproxy)
 		return 0;
 
-	if (__connman_dnsproxy_init() < 0) {
+	if (__connman_dnsproxy_init(dnsproxy_captiveportal) < 0) {
 		/* Fall back to resolv.conf */
 		return 0;
 	}
