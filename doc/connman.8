@@ -1,14 +1,14 @@
 .\" connman(8) manual page
 .\"
-.\" Copyright (C) 2012 Intel Corporation
+.\" Copyright (C) 2015 Intel Corporation
 .\"
-.TH CONNMAN "8" "21 August 2012"
+.TH CONNMAN "8" "14 September 2015"
 .SH NAME
 ConnMan \- network management daemon
 .SH SYNOPSIS
 .B connmand [\-\-version] | [\-\-help]
 .PP
-.B connmand [\-\-config=<filename>] [\-\-debug=<file1>:<file2>:...] [\-\-device=<interface1>,<interface2>,...] [\-\-nodevice=<interface1>,<interface2>,..] [\-\-wifi=<driver1>,<driver2>,...] [\-\-plugin=<plugin1>,<plugin2>,...] [\-\-noplugin=<plugin1>,<plugin2>,...] [\-\-nodaemon] [\-\-nodnsproxy]
+.B connmand [\-\-config=<filename>] [\-\-debug=<file1>:<file2>:...] [\-\-device=<interface1>,<interface2>,...] [\-\-nodevice=<interface1>,<interface2>,..] [\-\-wifi=<driver1>,<driver2>,...] [\-\-plugin=<plugin1>,<plugin2>,...] [\-\-noplugin=<plugin1>,<plugin2>,...] [\-\-nodaemon] [\-\-nodnsproxy] [\-\-dnsproxy_captiveportal]
 .SH DESCRIPTION
 The \fIConnMan\fP provides a daemon for managing internet connections
 within devices running the Linux operating system. The Connection Manager is
@@ -75,5 +75,11 @@ DNS server, then you can use the --nodnsproxy option.
 If this option is used, then ConnMan is not able to cache the DNS queries
 because the DNS traffic is not going through ConnMan and that can cause
 some extra network traffic.
+.TP
+.I "\-\-dnsproxy_captiveportal"
+Act as a captive portal in tethering mode when acting as DNS proxy. 
+When a DNS request is received in the DNS proxy and tethering is enabled, 
+a DNS cached response is sent with the IP address of the  tethering interface.
+This option does not work in combination with the option nodnsproxy. 
 .SH SEE ALSO
 .BR connman.conf (5).

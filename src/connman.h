@@ -244,7 +244,7 @@ int __connman_inet_get_address_netmask(int ifindex,
 
 #include <connman/resolver.h>
 
-int __connman_resolver_init(gboolean dnsproxy);
+int __connman_resolver_init(gboolean dnsproxy, gboolean dnsproxy_captiveportal);
 void __connman_resolver_cleanup(void);
 int __connman_resolvfile_append(int index, const char *domain, const char *server);
 int __connman_resolvfile_remove(int index, const char *domain, const char *server);
@@ -924,7 +924,7 @@ int __connman_iptables_init(void);
 void __connman_iptables_cleanup(void);
 int __connman_iptables_commit(const char *table_name);
 
-int __connman_dnsproxy_init(void);
+int __connman_dnsproxy_init(gboolean captive_portal);
 void __connman_dnsproxy_cleanup(void);
 int __connman_dnsproxy_add_listener(int index);
 void __connman_dnsproxy_remove_listener(int index);

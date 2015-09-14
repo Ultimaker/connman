@@ -619,17 +619,18 @@ static void free_resolvfile(gpointer data)
 	g_free(entry);
 }
 
-int __connman_resolver_init(gboolean dnsproxy)
+int __connman_resolver_init(gboolean dnsproxy, gboolean dnsproxy_captiveportal)
 {
 	int i;
 	char **ns;
 
-	DBG("dnsproxy %d", dnsproxy);
+	DBG("dnsproxy %d, dnsproxy_captiveportal %d", 
+		dnsproxy, dnsproxy_captiveportal);
 
 	if (!dnsproxy)
 		return 0;
 
-	if (__connman_dnsproxy_init() < 0) {
+	if (__connman_dnsproxy_init(dnsproxy_captiveportal) < 0) {
 		/* Fall back to resolv.conf */
 		return 0;
 	}
