@@ -468,7 +468,7 @@ static gchar *option_noplugin = NULL;
 static gchar *option_wifi = NULL;
 static gboolean option_detach = TRUE;
 static gboolean option_dnsproxy = TRUE;
-static gboolean option_dnsproxy_captiveportal = FALSE;
+static gboolean option_captiveproxy = FALSE;
 static gboolean option_backtrace = TRUE;
 static gboolean option_version = FALSE;
 
@@ -506,9 +506,9 @@ static GOptionEntry options[] = {
 	{ "nodnsproxy", 'r', G_OPTION_FLAG_REVERSE,
 				G_OPTION_ARG_NONE, &option_dnsproxy,
 				"Don't enable DNS Proxy" },
-	{ "dnsproxy_captiveportal", 'o', 0, G_OPTION_ARG_NONE, 
-				&option_dnsproxy_captiveportal, 
-				"Enable captive portal by DNS Proxy" },
+	{ "captiveproxy", 'o', 0, G_OPTION_ARG_NONE,
+				&option_captiveproxy,
+				"Enable captive portal by DNS proxy redirect" },
 	{ "nobacktrace", 0, G_OPTION_FLAG_REVERSE,
 				G_OPTION_ARG_NONE, &option_backtrace,
 				"Don't print out backtrace information" },
@@ -691,7 +691,7 @@ int main(int argc, char *argv[])
 
 	__connman_plugin_init(option_plugin, option_noplugin);
 
-	__connman_resolver_init(option_dnsproxy, option_dnsproxy_captiveportal);
+	__connman_resolver_init(option_dnsproxy, option_captiveproxy);
 	__connman_rtnl_start();
 	__connman_dhcp_init();
 	__connman_dhcpv6_init();

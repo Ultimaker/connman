@@ -94,11 +94,12 @@ If this option is used, then ConnMan is not able to cache the DNS queries
 because the DNS traffic is not going through ConnMan and that can cause
 some extra network traffic.
 .TP
-.BR \-r ", " \-\-dnsproxy_captiveportal
+.BR \-o ", " \-\-captiveproxy
 Act as a captive portal in tethering mode when acting as DNS proxy. 
 When a DNS request is received in the DNS proxy and tethering is enabled, 
-a DNS cached response is sent with the IP address of the  tethering interface.
+a DNS cached response is sent based on an injected dns cache entry with the IP 
+address of the tethering interface.
 When the \fB--nodnsproxy\fP option is set, setting the 
-\fB--dnsproxy_captiveportal\fP option has no effect.
+\fB--captiveproxy\fP option has no effect.
 .SH SEE ALSO
 .BR connman.conf (5).

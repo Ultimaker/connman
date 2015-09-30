@@ -244,7 +244,7 @@ int __connman_inet_get_address_netmask(int ifindex,
 
 #include <connman/resolver.h>
 
-int __connman_resolver_init(gboolean dnsproxy, gboolean dnsproxy_captiveportal);
+int __connman_resolver_init(gboolean dnsproxy, gboolean captiveproxy);
 void __connman_resolver_cleanup(void);
 int __connman_resolvfile_append(int index, const char *domain, const char *server);
 int __connman_resolvfile_remove(int index, const char *domain, const char *server);
@@ -924,12 +924,14 @@ int __connman_iptables_init(void);
 void __connman_iptables_cleanup(void);
 int __connman_iptables_commit(const char *table_name);
 
-int __connman_dnsproxy_init(gboolean captive_portal);
+int __connman_dnsproxy_init(gboolean captiveproxy);
 void __connman_dnsproxy_cleanup(void);
 int __connman_dnsproxy_add_listener(int index);
 void __connman_dnsproxy_remove_listener(int index);
 int __connman_dnsproxy_append(int index, const char *domain, const char *server);
 int __connman_dnsproxy_remove(int index, const char *domain, const char *server);
+void __connman_dnsproxy_set_inject_dns_cache_enabled(bool enabled);
+void __connman_dnsproxy_set_debug_dns_packet_data_enabled(bool enabled);
 
 int __connman_6to4_probe(struct connman_service *service);
 void __connman_6to4_remove(struct connman_ipconfig *ipconfig);
