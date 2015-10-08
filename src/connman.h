@@ -930,8 +930,11 @@ int __connman_dnsproxy_add_listener(int index);
 void __connman_dnsproxy_remove_listener(int index);
 int __connman_dnsproxy_append(int index, const char *domain, const char *server);
 int __connman_dnsproxy_remove(int index, const char *domain, const char *server);
-void __connman_dnsproxy_set_inject_dns_cache_enabled(bool enabled);
-void __connman_dnsproxy_set_debug_dns_packet_data_enabled(bool enabled);
+int __connman_dnsproxy_captive_proxy_tethering_exclude_client_in4(bool excluded,
+						struct in_addr *client_addr4);
+int __connman_dnsproxy_captive_proxy_tethering_exclude_client_in6(bool excluded,
+						struct in6_addr *client_addr6);
+int __connman_dnsproxy_set_debug_dns_packet_data_enabled(bool enabled);
 
 int __connman_6to4_probe(struct connman_service *service);
 void __connman_6to4_remove(struct connman_ipconfig *ipconfig);

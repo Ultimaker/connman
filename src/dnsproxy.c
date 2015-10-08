@@ -184,12 +184,11 @@ struct domain_rr {
 
 struct captive_dns_enabled {
 	bool captive_proxy_enabled;
-	bool inject_dns_cache_enabled;
 	bool debug_dns_packet_data_enabled;
 	bool tethering_enabled;
 };
 
-struct inject_cache {
+struct inject_cache_entry_data {
 	struct cache_entry *inject_cache_entry;
 	struct cache_data *inject_cache_data_ipv4;
 	struct cache_data *inject_cache_data_ipv6;
@@ -197,9 +196,11 @@ struct inject_cache {
 	unsigned char *inject_dns_packet_data_ipv6;
 };
 
-struct tether_ip_addr {
+struct inject_cache_ip_addr {
 	struct in_addr tether_in4_addr;
 	struct in6_addr tether_in6_addr;
+	GHashTable *client_ipv4_exclusion_table;
+	GHashTable *client_ipv6_exclusion_table;
 };
 
 /*
@@ -236,9 +237,11 @@ static GHashTable *listener_table = NULL;
 static time_t next_refresh;
 static GHashTable *partial_tcp_req_table;
 static guint cache_timer = 0;
-static struct captive_dns_enabled capt_en = {false, false, false, false};
-static struct inject_cache inj_cach = {NULL, NULL, NULL, NULL, NULL};
-static struct tether_ip_addr teth_ip = {{0}, IN6ADDR_ANY_INIT};
+static struct captive_dns_enabled capt_en = {false, false, false};
+static struct inject_cache_entry_data inj_cache_data =
+					{NULL, NULL, NULL, NULL, NULL};
+static struct inject_cache_ip_addr inj_cache_ip =
+					{{0}, IN6ADDR_ANY_INIT, NULL, NULL};
 
 static guint16 get_id(void)
 {
@@ -438,24 +441,32 @@ static char *dns_packet_type(bool response)
 		return "request: ";
 }
 
-static void debug_ipv4(struct in_addr *in4_addr)
+static int ipv4_str(struct in_addr *in4_addr, char * in4_str)
 {
-	char ipv4_str[INET_ADDRSTRLEN];
+	in4_str = g_malloc(INET_ADDRSTRLEN);
 
-	if (inet_ntop(AF_INET, in4_addr, ipv4_str, INET_ADDRSTRLEN) != NULL)
-		DBG("tether_in_addr: %s", ipv4_str);
-	else
+	if (inet_ntop(AF_INET, in4_addr, in4_str, INET_ADDRSTRLEN) != NULL) {
+		DBG("in_addr: %s", in4_str);
+		return 0;
+	}
+	else {
 		DBG("inet_ntop error, errno %d", errno);
+		return -EFAULT;
+	}
 }
 
-static void debug_ipv6(struct in6_addr *in6_addr)
+static int ipv6_str(struct in6_addr *in6_addr, char *in6_str)
 {
-	char ipv6_str[INET6_ADDRSTRLEN];
+	in6_str = g_malloc(INET6_ADDRSTRLEN);
 
-	if (inet_ntop(AF_INET6, in6_addr, ipv6_str, INET6_ADDRSTRLEN) != NULL)
-		DBG("tether_in6_addr: %s", ipv6_str);
-	else
+	if (inet_ntop(AF_INET6, in6_addr, in6_str, INET6_ADDRSTRLEN) != NULL) {
+		DBG("in6_addr: %s", in6_str);
+		return 0;
+	}
+	else {
 		DBG("inet_ntop error, errno %d", errno);
+		return -EFAULT;
+	}
 }
 
 static int debug_dns_packet_header(bool response, unsigned char *ptr)
@@ -495,7 +506,7 @@ static int debug_dns_packet_answer(unsigned char *ptr, bool is_ipv4)
 	char *name;
 	struct domain_rr *rr;
 	unsigned char * rdata;
-	uint32_t *data_ipv4;
+	char *in4_str, *in6_str;
 
 	name = (char *) ptr;
 	rr = (struct domain_rr *) (ptr + strlen(name) + 1);
@@ -504,11 +515,10 @@ static int debug_dns_packet_answer(unsigned char *ptr, bool is_ipv4)
 		ntohs(rr->rdlen));
 
 	rdata = ptr + strlen(name) + 1 + sizeof(struct domain_rr);
-	if (is_ipv4) {/* a record = ipv4 host addres */
-		data_ipv4 = (uint32_t *) rdata;
-		debug_ipv4((struct in_addr *) data_ipv4);
-	} else  /* aaa record = ipv6 host address */
-		debug_ipv6((struct in6_addr *) rdata);
+	if (is_ipv4) /* a record = ipv4 host addres */
+		ipv4_str((struct in_addr *) (uint32_t *) rdata, in4_str);
+	else  /* aaa record = ipv6 host address */
+		ipv6_str((struct in6_addr *) rdata, in6_str);
 
 	return strlen(name) + 1 + sizeof(struct domain_rr) + ntohs(rr->rdlen);
 }
@@ -1004,11 +1014,11 @@ static int inject_dns_packet_answer(char *name, uint16_t type,
 	rr->ttl = htonl(0);
 	adata += sizeof(struct domain_rr);	/* points to rdata */
 	if (is_ipv4) {
-		rdlen = sizeof(teth_ip.tether_in4_addr);
-		memcpy(adata, &teth_ip.tether_in4_addr, rdlen);
+		rdlen = sizeof(inj_cache_ip.tether_in4_addr);
+		memcpy(adata, &inj_cache_ip.tether_in4_addr, rdlen);
 	} else { /* ipv6 */
-		rdlen = sizeof(teth_ip.tether_in6_addr);
-		memcpy(adata, &teth_ip.tether_in6_addr, rdlen);
+		rdlen = sizeof(inj_cache_ip.tether_in6_addr);
+		memcpy(adata, &inj_cache_ip.tether_in6_addr, rdlen);
 	}
 	rr->rdlen = htons(rdlen);
 
@@ -1034,17 +1044,21 @@ static unsigned char *inject_dns_packet_data(gpointer request,
 		sizeof(struct domain_rr);
 
 	if (is_ipv4) {
-		g_free(inj_cach.inject_dns_packet_data_ipv4);
-		*tether_dns_packet_data_len += sizeof(teth_ip.tether_in4_addr);
-		inj_cach.inject_dns_packet_data_ipv4 =
+		g_free(inj_cache_data.inject_dns_packet_data_ipv4);
+		*tether_dns_packet_data_len +=
+			sizeof(inj_cache_ip.tether_in4_addr);
+		inj_cache_data.inject_dns_packet_data_ipv4 =
 			(unsigned char *) g_malloc(*tether_dns_packet_data_len);
-		tether_dns_packet_data = inj_cach.inject_dns_packet_data_ipv4;
+		tether_dns_packet_data =
+			inj_cache_data.inject_dns_packet_data_ipv4;
 	} else { /* ipv6 */
-		g_free(inj_cach.inject_dns_packet_data_ipv6);
-		*tether_dns_packet_data_len += sizeof(teth_ip.tether_in6_addr);
-		inj_cach.inject_dns_packet_data_ipv6 =
+		g_free(inj_cache_data.inject_dns_packet_data_ipv6);
+		*tether_dns_packet_data_len +=
+			sizeof(inj_cache_ip.tether_in6_addr);
+		inj_cache_data.inject_dns_packet_data_ipv6 =
 			(unsigned char *) g_malloc(*tether_dns_packet_data_len);
-		tether_dns_packet_data = inj_cach.inject_dns_packet_data_ipv6;
+		tether_dns_packet_data =
+			inj_cache_data.inject_dns_packet_data_ipv6;
 	}
 
 	data = tether_dns_packet_data;
@@ -1083,9 +1097,9 @@ static struct cache_data *inject_dns_cache_data(gpointer request,
 	DBG("type %d class %d is_ipv4 %d name %s", type, class, is_ipv4, name);
 
 	if (is_ipv4)
-		data = inj_cach.inject_cache_data_ipv4;
+		data = inj_cache_data.inject_cache_data_ipv4;
 	else
-		data = inj_cach.inject_cache_data_ipv6;
+		data = inj_cache_data.inject_cache_data_ipv6;
 
 	data->inserted = current_time;
 	data->valid_until = current_time + ttl;
@@ -1107,7 +1121,7 @@ static struct cache_entry *inject_dns_cache_entry(gpointer request,
 				uint16_t type, uint16_t class,
 				struct request_data *req, char *name)
 {
-	struct cache_entry *entry = inj_cach.inject_cache_entry;
+	struct cache_entry *entry = inj_cache_data.inject_cache_entry;
 
 	entry->key = g_strdup(name);
 	entry->want_refresh = true;
@@ -1146,9 +1160,9 @@ static bool is_request_from_tether_if(struct request_data *req)
 	return ret;
 }
 
-static bool inject_dns_cache_tethering_enabled(void)
+static bool captive_proxy_tethering_enabled(void)
 {
-	return capt_en.inject_dns_cache_enabled && capt_en.tethering_enabled;
+	return capt_en.captive_proxy_enabled && capt_en.tethering_enabled;
 }
 
 static struct cache_entry *get_cache_entry(gpointer request,
@@ -1157,11 +1171,11 @@ static struct cache_entry *get_cache_entry(gpointer request,
 {
 	struct cache_entry * entry;
 
-	DBG("type %d inject_dns_cache_tethering_enabled %d",
-		type, inject_dns_cache_tethering_enabled());
+	DBG("type %d captive_proxy_tethering_enabled %d",
+		type, captive_proxy_tethering_enabled());
 	DBG("is_request_from_tether_if %d", is_request_from_tether_if(req));
 
-	if (inject_dns_cache_tethering_enabled() &&
+	if (captive_proxy_tethering_enabled() &&
 		is_request_from_tether_if(req)
 			/*&& strstr(question, "google") != NULL */)
 		entry = inject_dns_cache_entry(request, type, class, req,
@@ -2000,8 +2014,8 @@ static int ns_resolv(struct server_data *server, struct request_data *req,
 	char *dot, *lookup = (char *) name;
 	struct cache_entry *entry;
 
-	DBG("lookup %s inject_dns_cache_tethering_enabled %d",
-		lookup, inject_dns_cache_tethering_enabled());
+	DBG("lookup %s captive_proxy_tethering_enabled %d",
+		lookup, captive_proxy_tethering_enabled());
 	DBG("is_request_from_tether_if %d", is_request_from_tether_if(req));
 
 	entry = cache_check(request, &type, req);
@@ -2041,7 +2055,7 @@ static int ns_resolv(struct server_data *server, struct request_data *req,
 		}
 	}
 
-	if (inject_dns_cache_tethering_enabled() &&
+	if (captive_proxy_tethering_enabled() &&
 			g_slist_length(server_list) == 0) {
 		DBG("ns_resolv returns error: no cached response sent");
 		return -ECOMM;
@@ -3045,7 +3059,7 @@ static int resolv(struct request_data *req,
 	GSList *list;
 	struct server_data *data = NULL;
 
-	if (inject_dns_cache_tethering_enabled() &&
+	if (captive_proxy_tethering_enabled() &&
 			g_slist_length(server_list) == 0)
 		return inject_cache_resolv_empty_server_list(data, req, request,
 								name);
@@ -3437,11 +3451,11 @@ read_another:
 	err = parse_request(client->buf + 2, msg_len,
 			query, sizeof(query));
 	if (err < 0 || (g_slist_length(server_list) == 0 &&
-			!inject_dns_cache_tethering_enabled())) {
+			!captive_proxy_tethering_enabled())) {
 		DBG("err %d length(server_list) %d", err,
 			g_slist_length(server_list));
-		DBG("inject_dns_cache_tethering_enabled %d",
-			inject_dns_cache_tethering_enabled());
+		DBG("captive_proxy_tethering_enabled %d",
+			captive_proxy_tethering_enabled());
 		send_response(client_sk, client->buf, msg_len + 2,
 			NULL, 0, IPPROTO_TCP);
 		return true;
@@ -3882,11 +3896,11 @@ static bool udp_listener_event(GIOChannel *channel, GIOCondition condition,
 
 	err = parse_request(buf, len, query, sizeof(query));
 	if (err < 0 || (g_slist_length(server_list) == 0 &&
-			!inject_dns_cache_tethering_enabled())) {
+			!captive_proxy_tethering_enabled())) {
 		DBG("err %d length(server_list) %d",
 			err, g_slist_length(server_list));
-		DBG("inject_dns_cache_tethering_enabled %d",
-			inject_dns_cache_tethering_enabled());
+		DBG("captive_proxy_tethering_enabled %d",
+			captive_proxy_tethering_enabled());
 		send_response(sk, buf, len, client_addr,
 				*client_addr_len, IPPROTO_UDP);
 		return true;
@@ -3920,7 +3934,7 @@ static bool udp_listener_event(GIOChannel *channel, GIOCondition condition,
 		/* a cached result was sent, so the request can be released */
 		g_free(req);
 		return true;
-	} else if (inject_dns_cache_tethering_enabled())
+	} else if (captive_proxy_tethering_enabled())
 		if (inject_cache_udp_handle_empty_server_list_error(ret, sk,
 				buf, len, client_addr, client_addr_len)) {
 			g_free(req);
@@ -4069,14 +4083,14 @@ static GIOChannel *get_listener(int family, int protocol, int index)
 		return NULL;
 	}
 
-	if (inject_dns_cache_tethering_enabled() && is_tether_index(index)) {
+	if (captive_proxy_tethering_enabled() && is_tether_index(index)) {
 		if (family == AF_INET6)
-			memcpy(&teth_ip.tether_in6_addr, &s.sin6.sin6_addr,
-				sizeof(teth_ip.tether_in6_addr));
+			memcpy(&inj_cache_ip.tether_in6_addr, &s.sin6.sin6_addr,
+				sizeof(inj_cache_ip.tether_in6_addr));
 
 		else /* family == AF_INET */
-			memcpy(&teth_ip.tether_in4_addr, &s.sin.sin_addr,
-				sizeof(teth_ip.tether_in4_addr));
+			memcpy(&inj_cache_ip.tether_in4_addr, &s.sin.sin_addr,
+				sizeof(inj_cache_ip.tether_in4_addr));
 	}
 
 	g_io_channel_set_close_on_unref(channel, TRUE);
@@ -4233,6 +4247,31 @@ static void set_tethering_enabled(bool enabled)
 	DBG("tethering_enabled %d", capt_en.tethering_enabled);
 }
 
+static void captive_proxy_tethering_init(void)
+{
+	inj_cache_ip.client_ipv4_exclusion_table =
+		g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL,
+					g_free);
+	DBG("client_ipv4_exclusion_table created");
+
+	inj_cache_ip.client_ipv6_exclusion_table =
+		g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+	DBG("client_ipv6_exclusion_table created");
+
+	set_tethering_enabled(true);
+}
+
+static void captive_proxy_tethering_cleanup(void)
+{
+	g_hash_table_destroy(inj_cache_ip.client_ipv4_exclusion_table);
+	DBG("client_ipv4_exclusion_table destroyed");
+
+	g_hash_table_destroy(inj_cache_ip.client_ipv6_exclusion_table);
+	DBG("client_ipv6_exclusion_table destroyed");
+
+	set_tethering_enabled(false);
+}
+
 int __connman_dnsproxy_add_listener(int index)
 {
 	struct listener_data *ifdata;
@@ -4263,16 +4302,16 @@ int __connman_dnsproxy_add_listener(int index)
 	ifdata->tcp6_listener_channel = NULL;
 	ifdata->tcp6_listener_watch = 0;
 
-	if (is_tether_index(index))
-		set_tethering_enabled(true);
+	if (capt_en.captive_proxy_enabled && is_tether_index(index))
+		captive_proxy_tethering_init();
 
 	err = create_listener(ifdata);
 	if (err < 0) {
 		connman_error("Couldn't create listener for index %d err %d",
 				index, err);
 		g_free(ifdata);
-		if (is_tether_index(index))
-			set_tethering_enabled(false);
+		if (capt_en.captive_proxy_enabled && is_tether_index(index))
+			captive_proxy_tethering_cleanup();
 		return err;
 	}
 	g_hash_table_insert(listener_table, GINT_TO_POINTER(ifdata->index),
@@ -4287,8 +4326,8 @@ void __connman_dnsproxy_remove_listener(int index)
 
 	DBG("index %d", index);
 
-	if (is_tether_index(index))
-		set_tethering_enabled(false);
+	if (capt_en.captive_proxy_enabled && is_tether_index(index))
+		captive_proxy_tethering_cleanup();
 
 	if (!listener_table)
 		return;
@@ -4320,54 +4359,181 @@ static void free_partial_reqs(gpointer value)
 	g_free(data);
 }
 
-void __connman_dnsproxy_set_inject_dns_cache_enabled(bool enabled)
+static int captive_tethering_add_client_in4_excluded(
+						struct in_addr *client_addr4)
 {
-	if (capt_en.captive_proxy_enabled) {
-		/* DNS cache poisoning */
-		capt_en.inject_dns_cache_enabled = enabled;
-		DBG("inject_dns_cache_enabled %d",
-			capt_en.inject_dns_cache_enabled);
-	}
+	struct in_addr *client_in4_addr = NULL;
+	char *in4_str = NULL;
+
+	if (ipv4_str(client_addr4, in4_str) < 0)
+		return -EINVAL;
+
+	if (!inj_cache_ip.client_ipv4_exclusion_table)
+		return -ENOENT;
+
+	if (g_hash_table_lookup(inj_cache_ip.client_ipv4_exclusion_table,
+				GUINT_TO_POINTER(client_addr4->s_addr)))
+		return 0;
+
+	client_in4_addr = g_try_new0(struct in_addr, 1);
+	if (!client_in4_addr)
+		return -ENOMEM;
+
+	memcpy(client_addr4, client_in4_addr, sizeof(struct in_addr));
+
+	g_hash_table_insert(inj_cache_ip.client_ipv4_exclusion_table,
+				GUINT_TO_POINTER(client_in4_addr->s_addr),
+				client_in4_addr);
+
+	return 0;
 }
 
-void __connman_dnsproxy_set_debug_dns_packet_data_enabled(bool enabled)
+static void captive_tethering_remove_client_in4_excluded(
+						struct in_addr *client_addr4)
+{
+	struct in_addr *client_in4_addr = NULL;
+	char *in4_str = NULL;
+
+	ipv4_str(client_addr4, in4_str);
+
+	if (!inj_cache_ip.client_ipv4_exclusion_table)
+		return;
+
+	client_in4_addr =
+		g_hash_table_lookup(inj_cache_ip.client_ipv4_exclusion_table,
+					GUINT_TO_POINTER(client_addr4->s_addr));
+	if (!client_in4_addr)
+		return;
+
+	g_hash_table_remove(inj_cache_ip.client_ipv4_exclusion_table,
+					GUINT_TO_POINTER(client_addr4->s_addr));
+}
+
+int __connman_dnsproxy_captive_proxy_tethering_exclude_client_in4(bool excluded,
+					struct in_addr *client_addr4)
+{
+	if (captive_proxy_tethering_enabled())
+		if (excluded)
+			/* Captive portal: start exclude client ipv4 address */
+			return captive_tethering_add_client_in4_excluded(
+								client_addr4);
+		else {
+			/* Captive portal: stop exclude client ipv4 address */
+			captive_tethering_remove_client_in4_excluded(
+								client_addr4);
+			return 0;
+		}
+	else
+		return -EPERM;
+}
+
+static int captive_tethering_add_client_in6_excluded(
+						struct in6_addr *client_addr6)
+{
+	struct in6_addr *client_in6_addr = NULL;
+	char * in6_str = NULL;
+
+	if (ipv6_str(client_addr6, in6_str) < 0)
+		return -EINVAL;
+
+	if (!inj_cache_ip.client_ipv6_exclusion_table)
+		return -ENOENT;
+
+	if (g_hash_table_lookup(inj_cache_ip.client_ipv6_exclusion_table,
+				in6_str))
+		return 0;
+
+	client_in6_addr = g_try_new0(struct in6_addr, 1);
+	if (!client_in6_addr)
+		return -ENOMEM;
+
+	memcpy(client_addr6, client_in6_addr, sizeof(struct in6_addr));
+
+	g_hash_table_insert(inj_cache_ip.client_ipv6_exclusion_table,
+				in6_str,
+				client_in6_addr);
+
+	return 0;
+}
+
+static void captive_tethering_remove_client_in6_excluded(
+						struct in6_addr *client_addr6)
+{
+	struct in_addr *client_in6_addr = NULL;
+	char *in6_str = NULL;
+
+	ipv6_str(client_addr6, in6_str);
+
+	if (!inj_cache_ip.client_ipv6_exclusion_table)
+		return;
+
+	client_in6_addr =
+		g_hash_table_lookup(inj_cache_ip.client_ipv6_exclusion_table,
+					in6_str);
+	if (!client_in6_addr)
+		return;
+
+	g_hash_table_remove(inj_cache_ip.client_ipv6_exclusion_table, in6_str);
+}
+
+int __connman_dnsproxy_captive_proxy_tethering_exclude_client_in6(bool excluded,
+					struct in6_addr *client_addr6)
+{
+	if (captive_proxy_tethering_enabled())
+		if (excluded)
+			/* Captive portal: start exclude client ipv6 address */
+			return captive_tethering_add_client_in6_excluded(
+								client_addr6);
+		else {
+			/* Captive portal: stop exclude client ipv6 address */
+			captive_tethering_remove_client_in6_excluded(
+								client_addr6);
+			return 0;
+		}
+	else
+		return -EPERM;
+}
+
+int __connman_dnsproxy_set_debug_dns_packet_data_enabled(bool enabled)
 {
 	if (capt_en.captive_proxy_enabled) {
 		/* Show qfields of DNS packets */
 		capt_en.debug_dns_packet_data_enabled = enabled;
 		DBG("debug_dns_packet_data_enabled %d",
 			capt_en.debug_dns_packet_data_enabled);
+		return 0;
 	}
+	else
+		return -EPERM;
 }
 
 static int captive_proxy_init(void)
 {
-	inj_cach.inject_cache_entry = g_try_new(struct cache_entry, 1);
-	DBG("inject_cache_entry created with size %d)",
+	inj_cache_data.inject_cache_entry = g_try_new(struct cache_entry, 1);
+	if (!inj_cache_data.inject_cache_entry)
+		return -ENOMEM;
+	DBG("inject_cache_entry created with size %d",
 		(int) sizeof(struct cache_entry));
-	if (!inj_cach.inject_cache_entry)
-		return -ENOMEM;
 
-	inj_cach.inject_cache_data_ipv4 = g_try_new(struct cache_data, 1);
-	DBG("inject_cache_data_ipv4 created with size %d)",
-		(int) sizeof(struct cache_data));
-	if (!inj_cach.inject_cache_data_ipv4) {
-		g_free(inj_cach.inject_cache_data_ipv4);
+	inj_cache_data.inject_cache_data_ipv4 = g_try_new(struct cache_data, 1);
+	if (!inj_cache_data.inject_cache_data_ipv4) {
+		g_free(inj_cache_data.inject_cache_data_ipv4);
 		return -ENOMEM;
 	}
-
-	inj_cach.inject_cache_data_ipv6 = g_try_new(struct cache_data, 1);
-	DBG("inject_cache_data_ipv6 created with size %d)",
+	DBG("inject_cache_data_ipv4 created with size %d",
 		(int) sizeof(struct cache_data));
-	if (!inj_cach.inject_cache_data_ipv6) {
-		g_free(inj_cach.inject_cache_data_ipv6);
-		g_free(inj_cach.inject_cache_data_ipv4);
+
+	inj_cache_data.inject_cache_data_ipv6 = g_try_new(struct cache_data, 1);
+	if (!inj_cache_data.inject_cache_data_ipv6) {
+		g_free(inj_cache_data.inject_cache_data_ipv6);
+		g_free(inj_cache_data.inject_cache_data_ipv4);
 		return -ENOMEM;
 	}
+	DBG("inject_cache_data_ipv6 created with size %d",
+		(int) sizeof(struct cache_data));
 
 	capt_en.captive_proxy_enabled = true;
 	DBG("captive_proxy_enabled %d", capt_en.captive_proxy_enabled);
-	__connman_dnsproxy_set_inject_dns_cache_enabled(true);
 	__connman_dnsproxy_set_debug_dns_packet_data_enabled(true);
 
 	return 0;
@@ -4416,30 +4582,24 @@ destroy:
 
 static void captive_proxy_cleanup(void)
 {
-	DBG("inject_cache_entry pointer %p with size %d)",
-		(void *) inj_cach.inject_cache_entry,
+	g_free(inj_cache_data.inject_cache_entry);
+	DBG("inject_cache_entry freed with size %d",
 		(int) sizeof(struct cache_entry));
-	g_free(inj_cach.inject_cache_entry);
 
-	DBG("inject_cache_data_ipv4 pointer %p with size %d)",
-		(void *) inj_cach.inject_cache_data_ipv4,
+	g_free(inj_cache_data.inject_cache_data_ipv4);
+	DBG("inject_cache_data_ipv4 freed with size %d",
 		(int) sizeof(struct cache_data));
-	g_free(inj_cach.inject_cache_data_ipv4);
 
-	DBG("inject_cache_data_ipv6 pointer %p with size %d)",
-		(void *) inj_cach.inject_cache_data_ipv6,
+	g_free(inj_cache_data.inject_cache_data_ipv6);
+	DBG("inject_cache_data_ipv6 freed with size %d",
 		(int) sizeof(struct cache_data));
-	g_free(inj_cach.inject_cache_data_ipv6);
 
-	DBG("inject_dns_packet_data_ipv4 pointer %p)",
-		(void *) inj_cach.inject_dns_packet_data_ipv4);
-	g_free(inj_cach.inject_dns_packet_data_ipv4);
+	g_free(inj_cache_data.inject_dns_packet_data_ipv4);
+	DBG("inject_dns_packet_data_ipv4 freed");
 
-	DBG("inject_dns_packet_data_ipv6 pointer %p)",
-		(void *) inj_cach.inject_dns_packet_data_ipv6);
-	g_free(inj_cach.inject_dns_packet_data_ipv6);
+	g_free(inj_cache_data.inject_dns_packet_data_ipv6);
+	DBG("inject_dns_packet_data_ipv6 freed");
 
-	__connman_dnsproxy_set_inject_dns_cache_enabled(false);
 	__connman_dnsproxy_set_debug_dns_packet_data_enabled(false);
 	capt_en.captive_proxy_enabled = false;
 	DBG("captive_proxy_enabled %d", capt_en.captive_proxy_enabled);
