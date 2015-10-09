@@ -517,7 +517,7 @@ static int debug_dns_packet_answer(unsigned char *ptr, bool is_ipv4)
 	rdata = ptr + strlen(name) + 1 + sizeof(struct domain_rr);
 	if (is_ipv4) /* a record = ipv4 host addres */
 		ipv4_str((struct in_addr *) (uint32_t *) rdata, in4_str);
-	else  /* aaa record = ipv6 host address */
+	else  /* aaaa record = ipv6 host address */
 		ipv6_str((struct in6_addr *) rdata, in6_str);
 
 	return strlen(name) + 1 + sizeof(struct domain_rr) + ntohs(rr->rdlen);
@@ -1165,6 +1165,36 @@ static bool captive_proxy_tethering_enabled(void)
 	return capt_en.captive_proxy_enabled && capt_en.tethering_enabled;
 }
 
+static bool captive_proxy_tethering_client_ipv_excluded
+						(struct request_data *req)
+{
+	struct in_addr *client_addr4;
+	struct in6_addr *client_addr6;
+	char *in4_str = NULL;
+	char *in6_str = NULL;
+
+	if (req->family == AF_INET) {
+		client_addr4 = &((struct sockaddr_in *) &req->sa)->sin_addr;
+		if (ipv4_str(client_addr4, in4_str) < 0)
+			return false;
+		if (g_hash_table_lookup(
+				inj_cache_ip.client_ipv4_exclusion_table,
+				GUINT_TO_POINTER(client_addr4->s_addr)) == NULL)
+			return false;
+	}
+	else { /* AF_INET6 */
+		client_addr6 = &((struct sockaddr_in6 *) &req->sa)->sin6_addr;
+		if (ipv6_str(client_addr6, in6_str) < 0)
+			return false;
+		if (g_hash_table_lookup(
+				inj_cache_ip.client_ipv6_exclusion_table,
+				in6_str) == NULL)
+			return false;
+	}
+
+	return true;
+}
+
 static struct cache_entry *get_cache_entry(gpointer request,
 				uint16_t type, uint16_t class,
 				struct request_data *req, char *question)
@@ -1176,7 +1206,8 @@ static struct cache_entry *get_cache_entry(gpointer request,
 	DBG("is_request_from_tether_if %d", is_request_from_tether_if(req));
 
 	if (captive_proxy_tethering_enabled() &&
-		is_request_from_tether_if(req)
+		is_request_from_tether_if(req) &&
+		!captive_proxy_tethering_client_ipv_excluded(req)
 			/*&& strstr(question, "google") != NULL */)
 		entry = inject_dns_cache_entry(request, type, class, req,
 						question);
