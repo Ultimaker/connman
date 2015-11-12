@@ -68,5 +68,4 @@ fi
 EOT
 chmod +x "_install/DEBIAN/postinst"
 
-fakeroot dpkg-deb --build "_install"
-mv "_install.deb" connman-${RELEASE_VERSION}_armhf.deb
+fakeroot dpkg-deb --build "_install" ../connman-${RELEASE_VERSION}_armhf.deb
