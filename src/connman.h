@@ -135,6 +135,8 @@ void __connman_log_cleanup(gboolean backtrace);
 void __connman_log_enable(struct connman_debug_desc *start,
 					struct connman_debug_desc *stop);
 
+#include <connman/backtrace.h>
+
 #include <connman/option.h>
 
 #include <connman/setting.h>
@@ -246,6 +248,7 @@ int __connman_inet_get_address_netmask(int ifindex,
 
 int __connman_resolver_init(gboolean dnsproxy, gboolean captiveproxy);
 void __connman_resolver_cleanup(void);
+void __connman_resolver_append_fallback_nameservers(void);
 int __connman_resolvfile_append(int index, const char *domain, const char *server);
 int __connman_resolvfile_remove(int index, const char *domain, const char *server);
 int __connman_resolver_redo_servers(int index);
@@ -656,6 +659,9 @@ int __connman_service_load_modifiable(struct connman_service *service);
 
 void __connman_service_list_struct(DBusMessageIter *iter);
 
+int __connman_service_compare(const struct connman_service *a,
+					const struct connman_service *b);
+
 struct connman_service *__connman_service_lookup_from_index(int index);
 struct connman_service *__connman_service_lookup_from_ident(const char *identifier);
 struct connman_service *__connman_service_create_from_network(struct connman_network *network);
@@ -778,6 +784,8 @@ void __connman_service_set_agent_identity(struct connman_service *service,
 int __connman_service_set_passphrase(struct connman_service *service,
 					const char *passphrase);
 const char *__connman_service_get_passphrase(struct connman_service *service);
+int __connman_service_check_passphrase(enum connman_service_security security,
+					const char *passphrase);
 int __connman_service_reset_ipconfig(struct connman_service *service,
 		enum connman_ipconfig_type type, DBusMessageIter *array,
 		enum connman_service_state *new_state);

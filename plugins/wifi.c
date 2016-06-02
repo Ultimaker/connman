@@ -71,6 +71,9 @@
 #define P2P_LISTEN_PERIOD 500
 #define P2P_LISTEN_INTERVAL 2000
 
+#define ASSOC_STATUS_NO_CLIENT 17
+#define LOAD_SHAPING_MAX_RETRIES 3
+
 static struct connman_technology *wifi_technology = NULL;
 static struct connman_technology *p2p_technology = NULL;
 
@@ -128,6 +131,7 @@ struct wifi_data {
 	unsigned flags;
 	unsigned int watch;
 	int retries;
+	int load_shaping_retries;
 	struct hidden_params *hidden;
 	bool postpone_hidden;
 	struct wifi_tethering_info *tethering_param;
@@ -140,10 +144,12 @@ struct wifi_data {
 	unsigned int p2p_find_timeout;
 	unsigned int p2p_connection_timeout;
 	struct connman_peer *pending_peer;
-	GSupplicantPeer *peer;
+	GSList *peers;
 	bool p2p_connecting;
 	bool p2p_device;
 	int servicing;
+	int disconnect_code;
+	int assoc_code;
 };
 
 static GList *iface_list = NULL;
@@ -245,8 +251,6 @@ static void peer_cancel_timeout(struct wifi_data *wifi)
 		connman_peer_unref(wifi->pending_peer);
 		wifi->pending_peer = NULL;
 	}
-
-	wifi->peer = NULL;
 }
 
 static gboolean peer_connect_timeout(gpointer data)
@@ -257,8 +261,11 @@ static gboolean peer_connect_timeout(gpointer data)
 
 	if (wifi->p2p_connecting) {
 		enum connman_peer_state state = CONNMAN_PEER_STATE_FAILURE;
+		GSupplicantPeer *gs_peer =
+			g_supplicant_interface_peer_lookup(wifi->interface,
+				connman_peer_get_identifier(wifi->pending_peer));
 
-		if (g_supplicant_peer_has_requested_connection(wifi->peer))
+		if (g_supplicant_peer_has_requested_connection(gs_peer))
 			state = CONNMAN_PEER_STATE_IDLE;
 
 		connman_peer_set_state(wifi->pending_peer, state);
@@ -309,13 +316,11 @@ static int peer_connect(struct connman_peer *peer,
 		return -ENODEV;
 
 	wifi = connman_device_get_data(device);
-	if (!wifi)
+	if (!wifi || !wifi->interface)
 		return -ENODEV;
 
 	if (wifi->p2p_connecting)
 		return -EBUSY;
-
-	wifi->peer = NULL;
 
 	gs_peer = g_supplicant_interface_peer_lookup(wifi->interface,
 					connman_peer_get_identifier(peer));
@@ -355,7 +360,6 @@ static int peer_connect(struct connman_peer *peer,
 						peer_connect_callback, wifi);
 	if (ret == -EINPROGRESS) {
 		wifi->pending_peer = connman_peer_ref(peer);
-		wifi->peer = gs_peer;
 		wifi->p2p_connecting = true;
 	} else if (ret < 0) {
 		g_free(peer_params->path);
@@ -794,6 +798,21 @@ static void remove_networks(struct connman_device *device,
 	wifi->networks = NULL;
 }
 
+static void remove_peers(struct wifi_data *wifi)
+{
+	GSList *list;
+
+	for (list = wifi->peers; list; list = list->next) {
+		struct connman_peer *peer = list->data;
+
+		connman_peer_unregister(peer);
+		connman_peer_unref(peer);
+	}
+
+	g_slist_free(wifi->peers);
+	wifi->peers = NULL;
+}
+
 static void reset_autoscan(struct connman_device *device)
 {
 	struct wifi_data *wifi = connman_device_get_data(device);
@@ -877,6 +896,7 @@ static void wifi_remove(struct connman_device *device)
 		g_source_remove(wifi->p2p_connection_timeout);
 
 	remove_networks(device, wifi);
+	remove_peers(wifi);
 
 	connman_device_set_powered(device, false);
 	connman_device_set_data(device, NULL);
@@ -1524,6 +1544,7 @@ static int wifi_disable(struct connman_device *device)
 	}
 
 	remove_networks(device, wifi);
+	remove_peers(wifi);
 
 	ret = g_supplicant_interface_remove(wifi->interface, NULL, NULL);
 	if (ret < 0)
@@ -1678,7 +1699,11 @@ static gboolean p2p_find_stop(gpointer data)
 
 	DBG("");
 
-	wifi->p2p_find_timeout = 0;
+	if (wifi) {
+		wifi->p2p_find_timeout = 0;
+
+		g_supplicant_interface_p2p_stop_find(wifi->interface);
+	}
 
 	connman_device_set_scanning(device, CONNMAN_SERVICE_TYPE_P2P, false);
 
@@ -1697,6 +1722,9 @@ static void p2p_find_callback(int result, GSupplicantInterface *interface,
 	struct wifi_data *wifi = connman_device_get_data(device);
 
 	DBG("result %d wifi %p", result, wifi);
+
+	if (!wifi)
+		goto error;
 
 	if (wifi->p2p_find_timeout) {
 		g_source_remove(wifi->p2p_find_timeout);
@@ -2075,7 +2103,21 @@ static int network_connect(struct connman_network *network)
 		wifi->pending_network = network;
 		g_free(ssid);
 	} else {
+
+		/*
+		 * This is the network that is going to get plumbed into wpa_s
+		 * Mark the previous network that is plumbed in wpa_s as not
+		 * connectable and then the current one as connectable.
+		 * This flag will be used to ensure that the network that is
+		 * sitting in wpa_s never gets marked unavailable even though
+		 * the scan did not find this network.
+		 */
+		if (wifi->network) {
+			connman_network_set_connectable(wifi->network, false);
+		}
+
 		wifi->network = connman_network_ref(network);
+		connman_network_set_connectable(wifi->network, true);
 		wifi->retries = 0;
 
 		return g_supplicant_interface_connect(interface, ssid,
@@ -2099,6 +2141,7 @@ static void disconnect_callback(int result, GSupplicantInterface *interface,
 	}
 
 	if (wifi->network) {
+		connman_network_set_connectable(wifi->network, false);
 		connman_network_set_connected(wifi->network, false);
 		wifi->network = NULL;
 	}
@@ -2162,6 +2205,7 @@ static void interface_added(GSupplicantInterface *interface)
 		if (!wifi)
 			return;
 
+		wifi->interface = interface;
 		g_supplicant_interface_set_data(interface, wifi);
 		p2p_iface_list = g_list_append(p2p_iface_list, wifi);
 		wifi->p2p_device = true;
@@ -2270,6 +2314,19 @@ static bool handle_wps_completion(GSupplicantInterface *interface,
 	return true;
 }
 
+static bool handle_assoc_status_code(GSupplicantInterface *interface,
+                                     struct wifi_data *wifi)
+{
+	if (wifi->state == G_SUPPLICANT_STATE_ASSOCIATING &&
+			wifi->assoc_code == ASSOC_STATUS_NO_CLIENT &&
+			wifi->load_shaping_retries < LOAD_SHAPING_MAX_RETRIES) {
+		wifi->load_shaping_retries ++;
+		return TRUE;
+	}
+	wifi->load_shaping_retries = 0;
+	return FALSE;
+}
+
 static bool handle_4way_handshake_failure(GSupplicantInterface *interface,
 					struct connman_network *network,
 					struct wifi_data *wifi)
@@ -2361,6 +2418,10 @@ static void interface_state(GSupplicantInterface *interface)
 			break;
 
 		connman_network_set_connected(network, true);
+
+		wifi->disconnect_code = 0;
+		wifi->assoc_code = 0;
+		wifi->load_shaping_retries = 0;
 		break;
 
 	case G_SUPPLICANT_STATE_DISCONNECTED:
@@ -2376,6 +2437,9 @@ static void interface_state(GSupplicantInterface *interface)
 				break;
 
 		if (is_idle(wifi))
+			break;
+
+		if (handle_assoc_status_code(interface, wifi))
 			break;
 
 		/* If previous state was 4way-handshake, then
@@ -2510,6 +2574,9 @@ static void p2p_support(GSupplicantInterface *interface)
 	const char *hostname;
 
 	DBG("");
+
+	if (!interface)
+		return;
 
 	if (!g_supplicant_interface_has_p2p(interface))
 		return;
@@ -2698,6 +2765,22 @@ static void network_removed(GSupplicantNetwork *network)
 	if (!connman_network)
 		return;
 
+	/*
+	 * wpa_s did not find this network in last scan and hence it generated
+	 * this callback. In case if this is the network with which device
+	 * was connected to, even though network_removed was called, wpa_s
+	 * will keep trying to connect to the same network and once the
+	 * network is back, it will proceed with the connection. Now if
+	 * connman would have removed this network from network hash table,
+	 * on a successful connection complete indication service state
+	 * machine will not move. End result would be only a L2 level
+	 * connection and no IP address. This check ensures that even if the
+	 * network_removed gets called for the previously connected network
+	 * do not remove it from network hash table.
+	 */
+	if (wifi->network == connman_network)
+		return;
+
 	wifi->networks = g_slist_remove(wifi->networks, connman_network);
 
 	connman_device_remove_network(wifi->device, connman_network);
@@ -2774,6 +2857,8 @@ static void peer_found(GSupplicantPeer *peer)
 	ret = connman_peer_register(connman_peer);
 	if (ret < 0 && ret != -EALREADY)
 		connman_peer_unref(connman_peer);
+	else
+		wifi->peers = g_slist_prepend(wifi->peers, connman_peer);
 }
 
 static void peer_lost(GSupplicantPeer *peer)
@@ -2799,6 +2884,8 @@ static void peer_lost(GSupplicantPeer *peer)
 		connman_peer_unregister(connman_peer);
 		connman_peer_unref(connman_peer);
 	}
+
+	wifi->peers = g_slist_remove(wifi->peers, connman_peer);
 }
 
 static void peer_changed(GSupplicantPeer *peer, GSupplicantPeerState state)
@@ -2812,6 +2899,9 @@ static void peer_changed(GSupplicantPeer *peer, GSupplicantPeerState state)
 	identifier = g_supplicant_peer_get_identifier(peer);
 
 	DBG("ident: %s", identifier);
+
+	if (!wifi)
+		return;
 
 	connman_peer = connman_peer_get(wifi->device, identifier);
 	if (!connman_peer)
@@ -2904,6 +2994,25 @@ static void debug(const char *str)
 		connman_debug("%s", str);
 }
 
+static void disconnect_reasoncode(GSupplicantInterface *interface,
+				int reasoncode)
+{
+	struct wifi_data *wifi = g_supplicant_interface_get_data(interface);
+
+	if (wifi != NULL) {
+		wifi->disconnect_code = reasoncode;
+	}
+}
+
+static void assoc_status_code(GSupplicantInterface *interface, int status_code)
+{
+	struct wifi_data *wifi = g_supplicant_interface_get_data(interface);
+
+	if (wifi != NULL) {
+		wifi->assoc_code = status_code;
+	}
+}
+
 static const GSupplicantCallbacks callbacks = {
 	.system_ready		= system_ready,
 	.system_killed		= system_killed,
@@ -2922,6 +3031,8 @@ static const GSupplicantCallbacks callbacks = {
 	.peer_changed		= peer_changed,
 	.peer_request		= peer_request,
 	.debug			= debug,
+	.disconnect_reasoncode  = disconnect_reasoncode,
+	.assoc_status_code      = assoc_status_code,
 };
 
 
@@ -3083,6 +3194,8 @@ static int enable_wifi_tethering(struct connman_technology *technology,
 			continue;
 
 		ifname = g_supplicant_interface_get_ifname(wifi->interface);
+		if (!ifname)
+			continue;
 
 		if (wifi->ap_supported == WIFI_AP_NOT_SUPPORTED) {
 			DBG("%s does not support AP mode (detected)", ifname);

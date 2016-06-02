@@ -24,6 +24,8 @@ missing
 stamp-h1
 autom4te.cache
 test-driver
+m4/
+!m4/configmake.m4
 
 connman.pc
 include/connman
@@ -34,10 +36,13 @@ src/connman.conf
 src/connman.service
 src/net.connman.service
 src/*-connman.rules
+src/connman-wait-online.service
+src/connmand-wait-online
 plugins/connman.policy
 scripts/connman
 scripts/openconnect-script
 scripts/openvpn-script
+scripts/connman_resolvconf.conf
 client/connmanctl
 tools/wispr
 tools/dhcp-test
@@ -64,8 +69,12 @@ unit/test-nat
 doc/*.bak
 doc/*.stamp
 doc/connman.*
-!doc/connman.8
-!doc/connman.conf.5
+doc/*.1
+doc/*.5
+doc/*.8
+!doc/*.1.in
+!doc/*.5.in
+!doc/*.8.in
 doc/connman-*.txt
 
 vpn/builtin.h

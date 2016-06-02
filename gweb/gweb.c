@@ -1465,6 +1465,9 @@ GWebParser *g_web_parser_new(const char *begin, const char *end,
 {
 	GWebParser *parser;
 
+	if (!begin || !end)
+		return NULL;
+
 	parser = g_try_new0(GWebParser, 1);
 	if (!parser)
 		return NULL;
