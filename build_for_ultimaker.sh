@@ -11,7 +11,7 @@ fi
 rm -rf _build
 mkdir _build
 cd _build
-CFLAGS=--sysroot=${SYSROOT} LDFLAGS=--sysroot=${SYSROOT} PKG_CONFIG="${SYSROOT}/../arm-pkg-config ${SYSROOT}" ../configure --with-systemdunitdir=/lib/systemd/system --enable-polkit --prefix=/usr \
+CFLAGS=--sysroot=${SYSROOT} LDFLAGS=--sysroot=${SYSROOT} PKG_CONFIG="${SYSROOT}/../arm-pkg-config ${SYSROOT}" ../configure --with-systemdunitdir=/lib/systemd/system --enable-polkit --prefix=/usr --localstatedir=/var \
 	--build=`gcc -dumpmachine` --host=arm-linux-gnueabihf --with-sysroot=${SYSROOT} --with-libtool-sysroot=${SYSROOT}
 
 make
