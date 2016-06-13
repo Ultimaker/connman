@@ -616,6 +616,9 @@ static void send_ACK(GDHCPServer *dhcp_server,
 	send_packet_to_client(dhcp_server, &packet);
 
 	add_lease(dhcp_server, 0, packet.chaddr, packet.yiaddr);
+
+	if (dhcp_server->lease_added_cb)
+		dhcp_server->lease_added_cb(packet.chaddr, packet.yiaddr);
 }
 
 static void send_NAK(GDHCPServer *dhcp_server,

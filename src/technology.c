@@ -841,7 +841,7 @@ static DBusMessage *set_property(DBusConnection *conn,
 	struct connman_technology *technology = data;
 	DBusMessageIter iter, value;
 	const char *name;
-	int type;
+	int type, err;
 
 	DBG("conn %p", conn);
 
@@ -924,7 +924,12 @@ static DBusMessage *set_property(DBusConnection *conn,
 			return __connman_error_not_supported(msg);
 
 		if ((strlen(str) < 8 || strlen(str) > 63) && strlen(str) != 0)
-			return __connman_error_passphrase_required(msg);
+                {
+			err = __connman_service_check_passphrase(CONNMAN_SERVICE_SECURITY_PSK,
+							str);
+			if (err < 0)
+				return __connman_error_passphrase_required(msg);
+		}
 
 		if (g_strcmp0(technology->tethering_passphrase, str) != 0) {
 			g_free(technology->tethering_passphrase);
@@ -1144,6 +1149,13 @@ static void technology_put(struct connman_technology *technology)
 	technology_dbus_unregister(technology);
 
 	g_slist_free(technology->device_list);
+
+    if (technology->pending_reply) {
+        dbus_message_unref(technology->pending_reply);
+        technology->pending_reply = NULL;
+        g_source_remove(technology->pending_timeout);
+        technology->pending_timeout = 0;
+    }
 
 	g_free(technology->path);
 	g_free(technology->regdom);
