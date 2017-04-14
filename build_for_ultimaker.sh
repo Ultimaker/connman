@@ -7,12 +7,36 @@ if [ -z ${RELEASE_VERSION+x} ]; then
 	RELEASE_VERSION=9999.99.99
 fi
 
+CONFIGFLAGS=""
+
+HOST_ARCH=$(dpkg --print-architecture)
+ARCH=${ARCH:-${HOST_ARCH}}
+
+if [ -n "${SYSROOT:-}" ]; then
+	export CFLAGS="${CFLAGS:-} --sysroot=${SYSROOT}"
+	export LDFLAGS="${LDFLAGS:-} --sysroot=${SYSROOT}"
+	export PKG_CONFIG="${PKG_CONFIG:-} ${SYSROOT}/../arm-pkg-config ${SYSROOT}"
+
+	CONFIGFLAGS="--host=arm-linux-gnueabihf --with-sysroot=${SYSROOT}}"
+else
+	if [ "${ARCH}" != "${HOST_ARCH}" ]; then
+		echo "When cross-compiling (${HOST_ARCH} -> ${ARCH}) \${SYSROOT} must be set."
+		exit 1
+	fi
+fi
+
+
 ./bootstrap
-rm -rf _build
-mkdir _build
-cd _build
-CFLAGS=--sysroot=${SYSROOT} LDFLAGS=--sysroot=${SYSROOT} PKG_CONFIG="${SYSROOT}/../arm-pkg-config ${SYSROOT}" ../configure --with-systemdunitdir=/lib/systemd/system --enable-polkit --prefix=/usr --localstatedir=/var \
-	--build=`gcc -dumpmachine` --host=arm-linux-gnueabihf --with-sysroot=${SYSROOT} --with-libtool-sysroot=${SYSROOT}
+rm -rf _build_${ARCH}
+mkdir _build_${ARCH}
+cd _build_${ARCH}
+../configure \
+	--with-systemdunitdir=/lib/systemd/system \
+	--enable-polkit \
+	--prefix=/usr \
+	--localstatedir=/var \
+	--build=`gcc -dumpmachine` \
+	${CONFIGFLAGS}
 
 make
 make install DESTDIR=`pwd`/_install
@@ -23,7 +47,7 @@ cat > "_install/DEBIAN/control" <<-EOT
 Package: connman
 Source: connman
 Version: ${RELEASE_VERSION}
-Architecture: armhf
+Architecture: ${ARCH}
 Maintainer: Anonymous <root@monolith.ultimaker.com>
 Depends: libc6 (>= 2.15), libdbus-1-3 (>= 1.1.1), libglib2.0-0 (>= 2.28.0), libgnutls-deb0-28 (>= 3.3.0), libreadline6 (>= 6.0), libxtables10, init-system-helpers (>= 1.18~), dbus, lsb-base
 Priority: optional
@@ -69,4 +93,4 @@ fi
 EOT
 chmod +x "_install/DEBIAN/postinst"
 
-fakeroot dpkg-deb --build "_install" ../connman-${RELEASE_VERSION}_armhf.deb
+fakeroot dpkg-deb --build "_install" ../connman-${RELEASE_VERSION}_${ARCH}.deb
