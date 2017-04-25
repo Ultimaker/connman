@@ -436,6 +436,11 @@ static void add_nat_rules(struct connman_session *session)
 	g_free(ifname);
 }
 
+uint32_t connman_session_firewall_get_fwmark(struct connman_session *session)
+{
+	return session->mark;
+}
+
 static void cleanup_routing_table(struct connman_session *session)
 {
 	DBG("");

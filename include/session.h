@@ -22,6 +22,7 @@
 #ifndef __CONNMAN_SESSION_H
 #define __CONNMAN_SESSION_H
 
+#include <stdint.h>
 #include <connman/service.h>
 
 #ifdef __cplusplus
@@ -97,6 +98,7 @@ struct connman_session_policy {
 							   GSList* services);
 };
 
+uint32_t connman_session_firewall_get_fwmark(struct connman_session *session);
 int connman_session_policy_register(struct connman_session_policy *config);
 void connman_session_policy_unregister(struct connman_session_policy *config);
 
