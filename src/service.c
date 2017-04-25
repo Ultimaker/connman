@@ -6404,6 +6404,11 @@ static struct connman_service *lookup_by_identifier(const char *identifier)
 	return g_hash_table_lookup(service_hash, identifier);
 }
 
+struct connman_service *connman_service_lookup_from_identifier(const char* identifier)
+{
+	return lookup_by_identifier(identifier);
+}
+
 struct provision_user_data {
 	const char *ident;
 	int ret;
