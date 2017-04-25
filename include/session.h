@@ -93,6 +93,8 @@ struct connman_session_policy {
 			struct connman_service *service);
 	void (*update_session_state)(struct connman_session* session,
 				     enum connman_session_state state);
+	struct connman_service* (*get_service_for_session)(struct connman_session* session,
+							   GSList* services);
 };
 
 int connman_session_policy_register(struct connman_session_policy *config);
