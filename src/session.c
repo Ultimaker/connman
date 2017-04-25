@@ -38,12 +38,6 @@ static GHashTable *service_hash;
 static struct connman_session *ecall_session;
 static uint32_t session_mark = 256;
 
-enum connman_session_state {
-	CONNMAN_SESSION_STATE_DISCONNECTED   = 0,
-	CONNMAN_SESSION_STATE_CONNECTED      = 1,
-	CONNMAN_SESSION_STATE_ONLINE         = 2,
-};
-
 struct session_info {
 	struct connman_session_config config;
 	enum connman_session_state state;
@@ -1685,6 +1679,10 @@ static void update_session_state(struct connman_session *session)
 	del_nat_rules(session);
 	update_routing_table(session);
 	add_nat_rules(session);
+
+	if (policy && policy->update_session_state)
+		policy->update_session_state(session, state);
+
 	session_notify(session);
 }
 

@@ -55,6 +55,12 @@ enum connman_session_id_type {
 	CONNMAN_SESSION_ID_TYPE_LSM	= 3,
 };
 
+enum connman_session_state {
+	CONNMAN_SESSION_STATE_DISCONNECTED   = 0,
+	CONNMAN_SESSION_STATE_CONNECTED      = 1,
+	CONNMAN_SESSION_STATE_ONLINE         = 2,
+};
+
 struct connman_session;
 
 struct connman_session_config {
@@ -85,6 +91,8 @@ struct connman_session_policy {
 				GSList *bearers);
 	bool (*allowed)(struct connman_session *session,
 			struct connman_service *service);
+	void (*update_session_state)(struct connman_session* session,
+				     enum connman_session_state state);
 };
 
 int connman_session_policy_register(struct connman_session_policy *config);
