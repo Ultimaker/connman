@@ -384,6 +384,9 @@ static void device_destruct(struct connman_device *device)
 
 	clear_pending_trigger(device);
 
+	g_hash_table_destroy(device->networks);
+	device->networks = NULL;
+
 	g_free(device->ident);
 	g_free(device->node);
 	g_free(device->name);
@@ -392,9 +395,6 @@ static void device_destruct(struct connman_device *device)
 	g_free(device->path);
 
 	g_free(device->last_network);
-
-	g_hash_table_destroy(device->networks);
-	device->networks = NULL;
 
 	g_free(device);
 }
