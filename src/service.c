@@ -1988,6 +1988,15 @@ static void ipv4_configuration_changed(struct connman_service *service)
 							service);
 }
 
+void __connman_service_notify_ipv4_configuration(
+					struct connman_service *service)
+{
+	if (!service)
+		return;
+
+	ipv4_configuration_changed(service);
+}
+
 static void ipv6_configuration_changed(struct connman_service *service)
 {
 	if (!allow_property_changed(service))

@@ -435,6 +435,7 @@ static void lease_available_cb(GDHCPClient *dhcp_client, gpointer user_data)
 {
 	struct connman_dhcp *dhcp = user_data;
 	GList *option = NULL;
+	enum connman_ipconfig_method old_method;
 	char *address, *netmask = NULL, *gateway = NULL;
 	const char *c_address, *c_gateway;
 	unsigned char prefixlen, c_prefixlen;
@@ -486,8 +487,24 @@ static void lease_available_cb(GDHCPClient *dhcp_client, gpointer user_data)
 	} else if (prefixlen != c_prefixlen)
 		ip_change = true;
 
+	old_method = __connman_ipconfig_get_method(dhcp->ipconfig);
 	__connman_ipconfig_set_method(dhcp->ipconfig,
 						CONNMAN_IPCONFIG_METHOD_DHCP);
+
+	/*
+	 * Notify IPv4.Configuration's method moved back to DHCP.
+	 *
+	 * This is the case ConnMan initially set an address by using
+	 * IPv4LL because DHCP failed but now we got an address from DHCP.
+	 */
+	if (old_method == CONNMAN_IPCONFIG_METHOD_AUTO) {
+		struct connman_service *service =
+			connman_service_lookup_from_network(dhcp->network);
+
+		if (service)
+			__connman_service_notify_ipv4_configuration(service);
+	}
+
 	if (ip_change) {
 		__connman_ipconfig_set_local(dhcp->ipconfig, address);
 		__connman_ipconfig_set_prefixlen(dhcp->ipconfig, prefixlen);
@@ -509,6 +526,7 @@ done:
 static void ipv4ll_available_cb(GDHCPClient *ipv4ll_client, gpointer user_data)
 {
 	struct connman_dhcp *dhcp = user_data;
+	enum connman_ipconfig_method old_method;
 	char *address, *netmask;
 	unsigned char prefixlen;
 
@@ -519,8 +537,25 @@ static void ipv4ll_available_cb(GDHCPClient *ipv4ll_client, gpointer user_data)
 
 	prefixlen = connman_ipaddress_calc_netmask_len(netmask);
 
+	old_method = __connman_ipconfig_get_method(dhcp->ipconfig);
 	__connman_ipconfig_set_method(dhcp->ipconfig,
-						CONNMAN_IPCONFIG_METHOD_DHCP);
+						CONNMAN_IPCONFIG_METHOD_AUTO);
+
+	/*
+	 * Notify IPv4.Configuration's method is AUTO now.
+	 *
+	 * This is the case DHCP failed thus ConnMan used IPv4LL to get an
+	 * address. Set IPv4.Configuration method to AUTO allows user to
+	 * ask for a DHCP address by setting the method again to DHCP.
+	 */
+	if (old_method == CONNMAN_IPCONFIG_METHOD_DHCP) {
+		struct connman_service *service =
+			connman_service_lookup_from_network(dhcp->network);
+
+		if (service)
+			__connman_service_notify_ipv4_configuration(service);
+	}
+
 	__connman_ipconfig_set_local(dhcp->ipconfig, address);
 	__connman_ipconfig_set_prefixlen(dhcp->ipconfig, prefixlen);
 	__connman_ipconfig_set_gateway(dhcp->ipconfig, NULL);

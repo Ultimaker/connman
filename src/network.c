@@ -172,6 +172,8 @@ static void dhcp_success(struct connman_network *network)
 	if (err < 0)
 		goto err;
 
+	__connman_service_save(service);
+
 	return;
 
 err:
@@ -647,10 +649,19 @@ static void set_disconnected(struct connman_network *network)
 		switch (ipv4_method) {
 		case CONNMAN_IPCONFIG_METHOD_UNKNOWN:
 		case CONNMAN_IPCONFIG_METHOD_OFF:
-		case CONNMAN_IPCONFIG_METHOD_AUTO:
 		case CONNMAN_IPCONFIG_METHOD_FIXED:
 		case CONNMAN_IPCONFIG_METHOD_MANUAL:
 			break;
+		case CONNMAN_IPCONFIG_METHOD_AUTO:
+			/*
+			 * If the current method is AUTO then next time we
+			 * try first DHCP. DHCP also needs to be stopped
+			 * in this case because if we fell in AUTO means
+			 * that DHCP  was launched for IPv4 but it failed.
+			 */
+			__connman_ipconfig_set_method(ipconfig_ipv4,
+						CONNMAN_IPCONFIG_METHOD_DHCP);
+			__connman_service_notify_ipv4_configuration(service);
 		case CONNMAN_IPCONFIG_METHOD_DHCP:
 			__connman_dhcp_stop(ipconfig_ipv4);
 			break;
