@@ -402,8 +402,10 @@ static int peer_disconnect(struct connman_peer *peer)
 							&peer_params);
 	g_free(peer_params.path);
 
-	if (ret == -EINPROGRESS)
+	if (ret == -EINPROGRESS) {
 		peer_cancel_timeout(wifi);
+		wifi->p2p_device = false;
+	}
 
 	return ret;
 }
@@ -2981,6 +2983,14 @@ static void peer_changed(GSupplicantPeer *peer, GSupplicantPeerState state)
 		connman_peer_set_as_master(connman_peer,
 					!g_supplicant_peer_is_client(peer));
 		connman_peer_set_sub_device(connman_peer, g_wifi->device);
+
+		/*
+		 * If wpa_supplicant didn't create a dedicated p2p-group
+		 * interface then mark this interface as p2p_device to avoid
+		 * scan and auto-scan are launched on it while P2P is connected.
+		 */
+		if (!g_list_find(p2p_iface_list, g_wifi))
+			wifi->p2p_device = true;
 	}
 
 	connman_peer_set_state(connman_peer, p_state);
