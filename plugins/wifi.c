@@ -1802,7 +1802,7 @@ static int wifi_scan(enum connman_service_type type,
 		return -ENODEV;
 
 	if (wifi->p2p_device)
-		return 0;
+		return -EBUSY;
 
 	if (wifi->tethering)
 		return -EBUSY;
