@@ -1,3 +1,19 @@
+connman (1.34-1) unstable; urgency=medium
+
+  * Imported upstream-version 1.34
+  * Removed obsolete fix-failure-kernel-4.5.patch 
+  * Removed obsolete deb822610-add-manpage-option.patch, applied upstream
+  * Removed obsolete dhcp-follow-rfc.patch, applied upstream
+  * Bumped Standards to 4.0.0
+  * Removed debian/connman.upstart, not supported according to new standards
+  * install main.conf (Closes: #858801)
+    Thanks David Lechner <david@lechnology.com>
+  * install connman in /usr/bin (Closes: #858799)
+    Thanks David Lechner <david@lechnology.com>
+  * Improved lintian-overrides
+
+ -- Alf Gaida <agaida@siduction.org>  Sun, 18 Jun 2017 18:29:03 +0200
+
 connman (1.33-3) unstable; urgency=high
 
   * Fix connman.postrm (Closes: #849345)
