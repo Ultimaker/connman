@@ -2802,6 +2802,57 @@ static void network_changed(GSupplicantNetwork *network, const char *property)
 	}
 }
 
+static void network_associated(GSupplicantNetwork *network)
+{
+	GSupplicantInterface *interface;
+	struct wifi_data *wifi;
+	struct connman_network *connman_network;
+	const char *identifier;
+
+	DBG("");
+
+	interface = g_supplicant_network_get_interface(network);
+	if (!interface)
+		return;
+
+	wifi = g_supplicant_interface_get_data(interface);
+	if (!wifi)
+		return;
+
+	identifier = g_supplicant_network_get_identifier(network);
+
+	connman_network = connman_device_get_network(wifi->device, identifier);
+	if (!connman_network)
+		return;
+
+	if (wifi->network) {
+		if (wifi->network == connman_network)
+			return;
+
+		/*
+		 * This should never happen, we got associated with
+		 * a network different than the one we were expecting.
+		 */
+		DBG("Associated to %p while expecting %p",
+					connman_network, wifi->network);
+
+		connman_network_set_associating(wifi->network, false);
+	}
+
+	DBG("Reconnecting to previous network %p from wpa_s", connman_network);
+
+	wifi->network = connman_network_ref(connman_network);
+	wifi->retries = 0;
+
+	/*
+	 * Interface state changes callback (interface_state) is always
+	 * called before network_associated callback thus we need to call
+	 * interface_state again in order to process the new state now that
+	 * we have the network properly set.
+	 */
+	interface_state(interface);
+}
+
 static void apply_peer_services(GSupplicantPeer *peer,
 				struct connman_peer *connman_peer)
 {
@@ -3021,6 +3072,7 @@ static const GSupplicantCallbacks callbacks = {
 	.network_added		= network_added,
 	.network_removed	= network_removed,
 	.network_changed	= network_changed,
+	.network_associated	= network_associated,
 	.peer_found		= peer_found,
 	.peer_lost		= peer_lost,
 	.peer_changed		= peer_changed,
