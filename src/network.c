@@ -50,7 +50,6 @@ struct connman_network {
 	bool available;
 	bool connected;
 	bool roaming;
-	bool connectable;
 	uint8_t strength;
 	uint16_t frequency;
 	char *identifier;
@@ -839,18 +838,6 @@ static gint compare_priority(gconstpointer a, gconstpointer b)
 	const struct connman_network_driver *driver2 = b;
 
 	return driver2->priority - driver1->priority;
-}
-
-int connman_network_set_connectable(struct connman_network *network,
-		bool connectable)
-{
-	network->connectable = connectable;
-	return 0;
-}
-
-bool connman_network_get_connectable(struct connman_network *network)
-{
-	return network->connectable;
 }
 
 /**
