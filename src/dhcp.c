@@ -59,10 +59,11 @@ struct connman_dhcp {
 	GDHCPClient *dhcp_client;
 	char *ipv4ll_debug_prefix;
 	char *dhcp_debug_prefix;
+
+	bool ipv4ll_running;
 };
 
 static GHashTable *ipconfig_table;
-static bool ipv4ll_running;
 
 static void dhcp_free(struct connman_dhcp *dhcp)
 {
@@ -85,7 +86,7 @@ static void ipv4ll_stop_client(struct connman_dhcp *dhcp)
 	g_dhcp_client_stop(dhcp->ipv4ll_client);
 	g_dhcp_client_unref(dhcp->ipv4ll_client);
 	dhcp->ipv4ll_client = NULL;
-	ipv4ll_running = false;
+	dhcp->ipv4ll_running = false;
 
 	g_free(dhcp->ipv4ll_debug_prefix);
 	dhcp->ipv4ll_debug_prefix = NULL;
@@ -232,7 +233,7 @@ static int ipv4ll_start_client(struct connman_dhcp *dhcp)
 		return err;
 	}
 
-	ipv4ll_running = true;
+	dhcp->ipv4ll_running = true;
 	return 0;
 }
 
@@ -253,7 +254,7 @@ static void no_lease_cb(GDHCPClient *dhcp_client, gpointer user_data)
 	struct connman_dhcp *dhcp = user_data;
 	int err;
 
-	DBG("No lease available ipv4ll %d client %p", ipv4ll_running,
+	DBG("No lease available ipv4ll %d client %p", dhcp->ipv4ll_running,
 		dhcp->ipv4ll_client);
 
 	if (dhcp->timeout > 0)
@@ -262,7 +263,7 @@ static void no_lease_cb(GDHCPClient *dhcp_client, gpointer user_data)
 	dhcp->timeout = g_timeout_add_seconds(RATE_LIMIT_INTERVAL,
 						dhcp_retry_cb,
 						dhcp);
-	if (ipv4ll_running)
+	if (dhcp->ipv4ll_running)
 		return;
 
 	err = ipv4ll_start_client(dhcp);
@@ -270,7 +271,7 @@ static void no_lease_cb(GDHCPClient *dhcp_client, gpointer user_data)
 		DBG("Cannot start ipv4ll client (%d/%s)", err, strerror(-err));
 
 	/* Only notify upper layer if we have a problem */
-	dhcp_invalidate(dhcp, !ipv4ll_running);
+	dhcp_invalidate(dhcp, !dhcp->ipv4ll_running);
 }
 
 static void lease_lost_cb(GDHCPClient *dhcp_client, gpointer user_data)
