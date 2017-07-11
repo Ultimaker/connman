@@ -661,6 +661,7 @@ static void set_disconnected(struct connman_network *network)
 			__connman_ipconfig_set_method(ipconfig_ipv4,
 						CONNMAN_IPCONFIG_METHOD_DHCP);
 			__connman_service_notify_ipv4_configuration(service);
+			/* fall through */
 		case CONNMAN_IPCONFIG_METHOD_DHCP:
 			__connman_dhcp_stop(ipconfig_ipv4);
 			break;

@@ -2234,6 +2234,7 @@ int __connman_ipconfig_load(struct connman_ipconfig *ipconfig,
 		 */
 		__connman_ipconfig_set_method(ipconfig,
 					CONNMAN_IPCONFIG_METHOD_DHCP);
+		/* fall through */
 
 	case CONNMAN_IPCONFIG_METHOD_DHCP:
 

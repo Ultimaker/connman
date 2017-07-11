@@ -1741,6 +1741,7 @@ static bool is_session_connected(struct connman_session *session,
 	case CONNMAN_SERVICE_STATE_READY:
 		if (session->info->config.type == CONNMAN_SESSION_TYPE_INTERNET)
 			return false;
+		/* fall through */
 	case CONNMAN_SERVICE_STATE_ONLINE:
 		return true;
 	}
