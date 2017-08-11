@@ -6,7 +6,6 @@ Uploaders: Mathieu Trudel-Lapierre <mathieu-tl@ubuntu.com>,
 Section: net
 Priority: optional
 Build-Depends: debhelper (>= 10),
-               autoconf (>= 2.69-9~),
                libudev-dev,
                libglib2.0-dev,
                libdbus-1-dev,
@@ -17,8 +16,7 @@ Build-Depends: debhelper (>= 10),
                wpasupplicant,
                libbluetooth-dev,
                ppp-dev,
-               dh-systemd,
-               dh-autoreconf
+               dh-systemd
 Standards-Version: 4.0.0
 Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/connman.git
 Vcs-Git: https://anonscm.debian.org/git/collab-maint/connman.git

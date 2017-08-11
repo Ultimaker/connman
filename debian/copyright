@@ -4,12 +4,12 @@ Upstream-Contact: Marcel Holtmann <marcel@holtmann.org>
 Source: https://git.kernel.org/cgit/network/connman/connman.git
 
 Files: *
-Copyright: 2007-2012 Intel Corporation. All rights reserved
+Copyright: 2007-2017 Intel Corporation. All rights reserved
 License: GPL-2
 
 Files: debian/*
 Copyright: 2009-2016 Alexander Sack <asac@debian.org>
-           2016      Alf Gaida <agaida@siduction.org>
+           2016-2017 Alf Gaida <agaida@siduction.org>
            2016      Mateusz Łukasik <mati75@linuxmint.pl>
            2010-2013 Mathieu Trudel <mathieu-tl@ubuntu.com>                
 License: GPL-2+
