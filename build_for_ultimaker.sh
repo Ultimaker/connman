@@ -25,7 +25,7 @@ Source: connman
 Version: ${RELEASE_VERSION}
 Architecture: armhf
 Maintainer: Anonymous <root@monolith.ultimaker.com>
-Depends: libc6 (>= 2.15), libdbus-1-3 (>= 1.1.1), libglib2.0-0 (>= 2.28.0), libgnutls-deb0-28 (>= 3.3.0), libreadline6 (>= 6.0), libxtables10, init-system-helpers (>= 1.18~), dbus, lsb-base
+Depends: libc6 (>= 2.15), libdbus-1-3 (>= 1.1.1), libglib2.0-0 (>= 2.28.0), libgnutls30 (>= 3.3.0), libreadline7 (>= 6.0), libxtables12, init-system-helpers (>= 1.18~), dbus, lsb-base
 Priority: optional
 Description: Intel Connection Manager daemon
  The Linux Connection Manager project provides a daemon for managing
