@@ -327,7 +327,10 @@ If wpa_supplicant is configured to D-Bus autostart, then ConnMan will
 trigger the autostart of wpa_supplicant. However please keep in mind
 that this trigger only happens once. If wpa_supplicant stops or crashes,
 ConnMan does not periodically try to autostart it. It is up to systemd or
-similar service management tool to autostart it.
+similar service management tool to autostart it. In case wpa_supplicant
+is not started by ConnMan then make sure option "-u" is used in order
+to enable its D-Bus control interface and ensure ConnMan can communicate
+with it.
 
 
 VPN
