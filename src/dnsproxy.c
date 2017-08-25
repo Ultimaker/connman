@@ -79,6 +79,11 @@ struct domain_hdr {
 #error "Unknown byte order"
 #endif
 
+struct qtype_qclass {
+	uint16_t qtype;
+	uint16_t qclass;
+} __attribute__ ((packed));
+
 struct partial_reply {
 	uint16_t len;
 	uint16_t received;
@@ -2918,25 +2923,32 @@ static struct connman_notifier dnsproxy_notifier = {
 
 static unsigned char opt_edns0_type[2] = { 0x00, 0x29 };
 
-static int parse_request(unsigned char *buf, int len,
+static int parse_request(unsigned char *buf, size_t len,
 					char *name, unsigned int size)
 {
 	struct domain_hdr *hdr = (void *) buf;
 	uint16_t qdcount = ntohs(hdr->qdcount);
+	uint16_t ancount = ntohs(hdr->ancount);
+	uint16_t nscount = ntohs(hdr->nscount);
 	uint16_t arcount = ntohs(hdr->arcount);
 	unsigned char *ptr;
-	char *last_label = NULL;
 	unsigned int remain, used = 0;
 
-	if (len < 12)
+	if (len < sizeof(*hdr) + sizeof(struct qtype_qclass) ||
+			hdr->qr || qdcount != 1 || ancount || nscount) {
+		DBG("Dropped DNS request qr %d with len %zd qdcount %d "
+			"ancount %d nscount %d", hdr->qr, len, qdcount, ancount,
+			nscount);
+
+		return -EINVAL;
+	}
+
+	if (!name || !size)
 		return -EINVAL;
 
 	debug("id 0x%04x qr %d opcode %d qdcount %d arcount %d",
 					hdr->id, hdr->qr, hdr->opcode,
 							qdcount, arcount);
-
-	if (hdr->qr != 0 || qdcount != 1)
-		return -EINVAL;
 
 	name[0] = '\0';
 
@@ -2947,7 +2959,23 @@ static int parse_request(unsigned char *buf, int len,
 		uint8_t label_len = *ptr;
 
 		if (label_len == 0x00) {
-			last_label = (char *) (ptr + 1);
+			uint8_t class;
+			struct qtype_qclass *q =
+				(struct qtype_qclass *)(ptr + 1);
+
+			if (remain < sizeof(*q)) {
+				DBG("Dropped malformed DNS query");
+				return -EINVAL;
+			}
+
+			class = ntohs(q->qclass);
+			if (class != 1 && class != 255) {
+				DBG("Dropped non-IN DNS class %d", class);
+				return -EINVAL;
+			}
+
+			ptr += sizeof(*q) + 1;
+			remain -= (sizeof(*q) + 1);
 			break;
 		}
 
@@ -2963,26 +2991,13 @@ static int parse_request(unsigned char *buf, int len,
 		remain -= label_len + 1;
 	}
 
-	if (last_label && arcount && remain >= 9 && last_label[4] == 0 &&
-				!memcmp(last_label + 5, opt_edns0_type, 2)) {
-		uint16_t edns0_bufsize;
+	if (arcount && remain >= sizeof(struct domain_rr) + 1 && !ptr[0] &&
+		ptr[1] == opt_edns0_type[0] && ptr[2] == opt_edns0_type[1]) {
+		struct domain_rr *edns0 = (struct domain_rr *)(ptr + 1);
 
-		edns0_bufsize = last_label[7] << 8 | last_label[8];
-
-		debug("EDNS0 buffer size %u", edns0_bufsize);
-
-		/* This is an evil hack until full TCP support has been
-		 * implemented.
-		 *
-		 * Somtimes the EDNS0 request gets send with a too-small
-		 * buffer size. Since glibc doesn't seem to crash when it
-		 * gets a response biffer then it requested, just bump
-		 * the buffer size up to 4KiB.
-		 */
-		if (edns0_bufsize < 0x1000) {
-			last_label[7] = 0x10;
-			last_label[8] = 0x00;
-		}
+		DBG("EDNS0 buffer size %u", ntohs(edns0->class));
+	} else if (!arcount && remain) {
+		DBG("DNS request with %d garbage bytes", remain);
 	}
 
 	debug("query %s", name);
