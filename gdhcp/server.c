@@ -691,7 +691,7 @@ static gboolean listener_event(GIOChannel *channel, GIOCondition condition,
 		debug(dhcp_server, "Received REQUEST NIP %d",
 							requested_nip);
 		if (requested_nip == 0) {
-			requested_nip = packet.ciaddr;
+			requested_nip = ntohl(packet.ciaddr);
 			if (requested_nip == 0)
 				break;
 		}
