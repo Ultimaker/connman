@@ -559,6 +559,7 @@ struct creation_data {
 	GSList *allowed_bearers;
 	char *allowed_interface;
 	bool source_ip_rule;
+	char *context_identifier;
 };
 
 static void cleanup_creation_data(struct creation_data *creation_data)
@@ -568,6 +569,8 @@ static void cleanup_creation_data(struct creation_data *creation_data)
 
 	if (creation_data->pending)
 		dbus_message_unref(creation_data->pending);
+	if (creation_data->context_identifier)
+		g_free(creation_data->context_identifier);
 
 	g_slist_free(creation_data->allowed_bearers);
 	g_free(creation_data->allowed_interface);
@@ -935,6 +938,17 @@ static void append_notify(DBusMessageIter *dict,
 						DBUS_TYPE_STRING,
 						&ifname);
 		info_last->config.allowed_interface = info->config.allowed_interface;
+	}
+
+	if (session->append_all ||
+			info->config.context_identifier != info_last->config.context_identifier) {
+		char *ifname = info->config.context_identifier;
+		if (!ifname)
+			ifname = "";
+		connman_dbus_dict_append_basic(dict, "Context_Identifier",
+						DBUS_TYPE_STRING,
+						&ifname);
+		info_last->config.context_identifier = info->config.context_identifier;
 	}
 
 	if (session->append_all ||
@@ -1485,6 +1499,9 @@ int __connman_session_create(DBusMessage *msg)
 					connman_session_parse_connection_type(val);
 
 				user_connection_type = true;
+			} else if (g_str_equal(key, "ContextIdentifier")) {
+				dbus_message_iter_get_basic(&value, &val);
+				creation_data->context_identifier = g_strdup(val);
 			} else if (g_str_equal(key, "AllowedInterface")) {
 				dbus_message_iter_get_basic(&value, &val);
 				creation_data->allowed_interface = g_strdup(val);
