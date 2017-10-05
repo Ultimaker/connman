@@ -571,7 +571,7 @@ static GOptionEntry options[] = {
 				"Don't fork daemon to background" },
 	{ "nodnsproxy", 'r', G_OPTION_FLAG_REVERSE,
 				G_OPTION_ARG_NONE, &option_dnsproxy,
-				"Don't enable DNS Proxy" },
+				"Don't support DNS resolving" },
 	{ "nobacktrace", 0, G_OPTION_FLAG_REVERSE,
 				G_OPTION_ARG_NONE, &option_backtrace,
 				"Don't print out backtrace information" },

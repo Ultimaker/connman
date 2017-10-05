@@ -220,6 +220,16 @@ For a working system, certain configuration options need to be enabled:
 			# semodule -i connman-task.pp
 		in order to enable the dbus access.
 
+    --with-dns-backend=TYPE
+
+		Enable support for a DNS resolving backend
+
+		Select a DNS backend to use. Supported values are "internal"
+		and "systemd-resolved". If "internal" is selected, ConnMan
+		will be build with a caching DNS proxy. If "systemd-resolved"
+		is selected, ConnMan configures systemd-resolved to do DNS
+		resolving. The default value is "internal".
+
 
 Activating debugging
 ====================
