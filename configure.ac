@@ -433,4 +433,18 @@ AM_CONDITIONAL(VPN, test "${enable_openconnect}" != "no" -o \
 			"${enable_l2tp}" != "no" -o \
 			"${enable_pptp}" != "no")
 
+AC_MSG_CHECKING(which DNS backend to use)
+AC_ARG_WITH(dns-backend, AC_HELP_STRING([--with-dns-backend=TYPE],
+            [specify which DNS backend to use: internal or systemd-resolved [default=internal]]),
+		[dns_backend=${withval}],
+		[dns_backend="internal"])
+
+if (test "${dns_backend}" != "internal" -a \
+		"${dns_backend}" != "systemd-resolved"); then
+	AC_MSG_ERROR(no suitable DNS backend defined)
+fi
+AM_CONDITIONAL(INTERNAL_DNS_BACKEND, test "${dns_backend}" = "internal")
+AM_CONDITIONAL(SYSTEMD_RESOLVED_DNS_BACKEND, test "${dns_backend}" = "systemd-resolved")
+AC_MSG_RESULT(${dns_backend})
+
 AC_OUTPUT(Makefile include/version.h connman.pc)

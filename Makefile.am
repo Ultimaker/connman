@@ -120,10 +120,17 @@ src_connmand_SOURCES = $(gdhcp_sources) $(gweb_sources) $(backtrace_sources) \
 			src/storage.c src/dbus.c src/config.c \
 			src/technology.c src/counter.c src/ntp.c \
 			src/session.c src/tethering.c src/wpad.c src/wispr.c \
-			src/stats.c src/dnsproxy.c src/6to4.c \
+			src/stats.c src/6to4.c \
 			src/ippool.c src/bridge.c src/nat.c src/ipaddress.c \
 			src/inotify.c src/ipv6pd.c src/peer.c \
 			src/peer_service.c src/machine.c src/util.c
+
+if INTERNAL_DNS_BACKEND
+src_connmand_SOURCES += src/dnsproxy.c
+endif
+if SYSTEMD_RESOLVED_DNS_BACKEND
+src_connmand_SOURCES += src/dns-systemd-resolved.c
+endif
 
 src_connmand_LDADD = gdbus/libgdbus-internal.la $(builtin_libadd) \
 			@GLIB_LIBS@ @DBUS_LIBS@ @GNUTLS_LIBS@ \
@@ -178,7 +185,11 @@ vpn_connman_vpnd_LDFLAGS = -Wl,--export-dynamic \
 endif
 
 BUILT_SOURCES = $(local_headers) src/builtin.h $(service_files) \
-	scripts/connman scripts/connman_resolvconf.conf
+	scripts/connman
+
+if INTERNAL_DNS_BACKEND
+BUILT_SOURCES += scripts/connman_resolvconf.conf
+endif
 
 if VPN
 BUILT_SOURCES += vpn/builtin.h
