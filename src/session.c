@@ -945,7 +945,7 @@ static void append_notify(DBusMessageIter *dict,
 		char *ifname = info->config.context_identifier;
 		if (!ifname)
 			ifname = "";
-		connman_dbus_dict_append_basic(dict, "Context_Identifier",
+		connman_dbus_dict_append_basic(dict, "ContextIdentifier",
 						DBUS_TYPE_STRING,
 						&ifname);
 		info_last->config.context_identifier = info->config.context_identifier;
