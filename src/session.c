@@ -67,6 +67,7 @@ struct connman_session {
 	int index;
 	char *addr;
 	char *gateway;
+	unsigned char prefixlen;
 	bool policy_routing;
 	bool snat_enabled;
 };
@@ -357,13 +358,17 @@ static void del_default_route(struct connman_session *session)
 	if (!session->gateway)
 		return;
 
-	DBG("index %d routing table %d default gateway %s",
-		session->index, session->mark, session->gateway);
+	DBG("index %d routing table %d default gateway %s/%u",
+		session->index, session->mark, session->gateway, session->prefixlen);
+
+		__connman_inet_del_subnet_from_table(session->mark,
+			session->index, session->gateway, session->prefixlen);
 
 	__connman_inet_del_default_from_table(session->mark,
 					session->index, session->gateway);
 	g_free(session->gateway);
 	session->gateway = NULL;
+	session->prefixlen = 0;
 	session->index = -1;
 }
 
@@ -383,13 +388,20 @@ static void add_default_route(struct connman_session *session)
 	if (!session->gateway)
 		session->gateway = g_strdup(inet_ntoa(addr));
 
-	DBG("index %d routing table %d default gateway %s",
-		session->index, session->mark, session->gateway);
+	session->prefixlen = __connman_ipconfig_get_prefixlen(ipconfig);
+
+	DBG("index %d routing table %d default gateway %s/%u",
+		session->index, session->mark, session->gateway, session->prefixlen);
 
 	err = __connman_inet_add_default_to_table(session->mark,
 					session->index, session->gateway);
 	if (err < 0)
 		DBG("session %p %s", session, strerror(-err));
+
+	err = __connman_inet_add_subnet_to_table(session->mark,
+					session->index, session->gateway, session->prefixlen);
+	if (err < 0)
+		DBG("session add subnet route %p %s", session, strerror(-err));
 }
 
 static void del_nat_rules(struct connman_session *session)
