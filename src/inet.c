@@ -2880,12 +2880,26 @@ int __connman_inet_add_default_to_table(uint32_t table_id, int ifindex,
 	return iproute_default_modify(RTM_NEWROUTE, table_id, ifindex, gateway, 0);
 }
 
+int __connman_inet_add_subnet_to_table(uint32_t table_id, int ifindex,
+						const char *gateway, unsigned char prefixlen)
+{
+	/* ip route add 1.2.3.4/24 dev eth0 table 1234 */
+	return iproute_default_modify(RTM_NEWROUTE, table_id, ifindex, gateway, prefixlen);
+}
+
 int __connman_inet_del_default_from_table(uint32_t table_id, int ifindex,
 						const char *gateway)
 {
 	/* ip route del default via 1.2.3.4 dev wlan0 table 1234 */
 
 	return iproute_default_modify(RTM_DELROUTE, table_id, ifindex, gateway, 0);
+}
+
+int __connman_inet_del_subnet_from_table(uint32_t table_id, int ifindex,
+						const char *gateway, unsigned char prefixlen)
+{
+	/* ip route del 1.2.3.4/24 dev eth0 table 1234 */
+	return iproute_default_modify(RTM_DELROUTE, table_id, ifindex, gateway, prefixlen);
 }
 
 int __connman_inet_get_interface_ll_address(int index, int family,
