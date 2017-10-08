@@ -5341,7 +5341,7 @@ static void request_input_cb(struct connman_service *service,
 
 		if (g_strcmp0(error,
 				"net.connman.Agent.Error.Canceled") == 0) {
-			err = -EINVAL;
+			err = -ECONNABORTED;
 
 			if (service->hidden)
 				__connman_service_return_error(service,
