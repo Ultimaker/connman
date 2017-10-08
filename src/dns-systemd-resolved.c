@@ -36,7 +36,7 @@
 #define SYSTEMD_RESOLVED_SERVICE "org.freedesktop.resolve1"
 #define SYSTEMD_RESOLVED_PATH "/org/freedesktop/resolve1"
 
-static GTree *interface_map;
+static GHashTable *interface_hash;
 static DBusConnection *connection;
 static GDBusClient *client;
 static GDBusProxy *resolved_proxy;
@@ -52,12 +52,12 @@ struct dns_interface {
 	bool needs_server_update;
 };
 
-static gint int_cmp(gconstpointer a, gconstpointer b, void *data)
+static gboolean compare_index(gconstpointer a, gconstpointer b)
 {
 	gint ai = GPOINTER_TO_UINT(a);
 	gint bi = GPOINTER_TO_UINT(b);
 
-	return ai - bi;
+	return ai == bi;
 }
 
 static void free_dns_interface(gpointer data)
@@ -217,7 +217,7 @@ static bool is_empty(struct dns_interface *iface)
 	return (!iface->domains && !iface->servers);
 }
 
-static gboolean update_interface(gpointer key, gpointer value, gpointer data)
+static void update_interface(gpointer key, gpointer value, gpointer data)
 {
 	struct dns_interface *iface = value;
 	GList **removed_items = data;
@@ -226,25 +226,25 @@ static gboolean update_interface(gpointer key, gpointer value, gpointer data)
 
 	if (is_empty(iface))
 		*removed_items = g_list_prepend(*removed_items, iface);
-
-	/* don't stop the tree traversal */
-	return FALSE;
 }
 
 static int update_systemd_resolved(gpointer data)
 {
 	GList *removed_items = NULL, *list;
 
-	if (!interface_map) {
-		DBG("no interface map when updating");
+	if (!interface_hash) {
+		DBG("no interface hash when updating");
+
 		return G_SOURCE_REMOVE;
 	}
 
-	g_tree_foreach(interface_map, update_interface, &removed_items);
+	g_hash_table_foreach(interface_hash, update_interface, &removed_items);
 
 	for (list = removed_items; list; list = g_list_next(list)) {
 		struct dns_interface *iface = list->data;
-		g_tree_remove(interface_map, GUINT_TO_POINTER(iface->index));
+
+		g_hash_table_remove(interface_hash,
+				GUINT_TO_POINTER(iface->index));
 	}
 
 	g_list_free(removed_items);
@@ -293,10 +293,10 @@ int __connman_dnsproxy_remove(int index, const char *domain,
 	DBG("%d, %s, %s", index, domain ? domain : "no domain",
 			server ? server : "no server");
 
-	if (!interface_map || index < 0)
+	if (!interface_hash || index < 0)
 		return -EINVAL;
 
-	iface = g_tree_lookup(interface_map, GUINT_TO_POINTER(index));
+	iface = g_hash_table_lookup(interface_hash, GUINT_TO_POINTER(index));
 
 	if (!iface)
 		return -EINVAL;
@@ -335,10 +335,10 @@ int __connman_dnsproxy_append(int index, const char *domain,
 	DBG("%d, %s, %s", index, domain ? domain : "no domain",
 			server ? server : "no server");
 
-	if (!interface_map || index < 0)
+	if (!interface_hash || index < 0)
 		return -EINVAL;
 
-	iface = g_tree_lookup(interface_map, GUINT_TO_POINTER(index));
+	iface = g_hash_table_lookup(interface_hash, GUINT_TO_POINTER(index));
 
 	if (!iface) {
 		iface = g_new0(struct dns_interface, 1);
@@ -346,7 +346,7 @@ int __connman_dnsproxy_append(int index, const char *domain,
 			return -ENOMEM;
 
 		iface->index = index;
-		g_tree_insert(interface_map, GUINT_TO_POINTER(index), iface);
+		g_hash_table_replace(interface_hash, GUINT_TO_POINTER(index), iface);
 	}
 
 	if (domain) {
@@ -405,13 +405,15 @@ int __connman_dnsproxy_init(void)
 
 	DBG("");
 
-	if ((ret = setup_resolved()) < 0)
+	ret = setup_resolved();
+	if (ret)
 		return ret;
 
-	interface_map = g_tree_new_full(int_cmp, NULL, NULL,
-			free_dns_interface);
-
-	if (!interface_map)
+	interface_hash = g_hash_table_new_full(g_direct_hash,
+						compare_index,
+						NULL,
+						free_dns_interface);
+	if (!interface_hash)
 		return -ENOMEM;
 
 	return 0;
@@ -431,9 +433,9 @@ void __connman_dnsproxy_cleanup(void)
 		 update_interfaces_source = 0;
 	}
 
-	if (interface_map) {
-		g_tree_destroy(interface_map);
-		interface_map = NULL;
+	if (interface_hash) {
+		g_hash_table_destroy(interface_hash);
+		interface_hash = NULL;
 	}
 
 	if (resolved_proxy) {
