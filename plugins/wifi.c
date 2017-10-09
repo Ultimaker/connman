@@ -64,7 +64,8 @@
 #define FAVORITE_MAXIMUM_RETRIES 2
 
 #define BGSCAN_DEFAULT "simple:30:-45:300"
-#define AUTOSCAN_DEFAULT "exponential:3:300"
+#define AUTOSCAN_EXPONENTIAL "exponential:3:300"
+#define AUTOSCAN_SINGLE "single:3"
 
 #define P2P_FIND_TIMEOUT 30
 #define P2P_CONNECTION_TIMEOUT 100
@@ -81,6 +82,12 @@ enum wifi_ap_capability{
 	WIFI_AP_UNKNOWN 	= 0,
 	WIFI_AP_SUPPORTED 	= 1,
 	WIFI_AP_NOT_SUPPORTED 	= 2,
+};
+
+enum wifi_scanning_type {
+	WIFI_SCANNING_UNKNOWN	= 0,
+	WIFI_SCANNING_PASSIVE	= 1,
+	WIFI_SCANNING_ACTIVE	= 2,
 };
 
 struct hidden_params {
@@ -143,7 +150,7 @@ struct wifi_data {
 	 * autoscan "emulation".
 	 */
 	struct autoscan_params *autoscan;
-
+	enum wifi_scanning_type scanning_type;
 	GSupplicantScanParams *scan_params;
 	unsigned int p2p_find_timeout;
 	unsigned int p2p_connection_timeout;
@@ -831,13 +838,13 @@ static void reset_autoscan(struct connman_device *device)
 
 	autoscan = wifi->autoscan;
 
-	if (autoscan->timeout == 0 && autoscan->interval == 0)
+	autoscan->interval = 0;
+
+	if (autoscan->timeout == 0)
 		return;
 
 	g_source_remove(autoscan->timeout);
-
 	autoscan->timeout = 0;
-	autoscan->interval = 0;
 
 	connman_device_unref(device);
 }
@@ -1363,6 +1370,21 @@ static gboolean autoscan_timeout(gpointer data)
 
 	throw_wifi_scan(wifi->device, scan_callback_hidden);
 
+	/*
+	 * In case BackgroundScanning is disabled, interval will reach the
+	 * limit exactly after the very first passive scanning. It allows
+	 * to ensure at most one passive scan is performed in such cases.
+	 */
+	if (!connman_setting_get_bool("BackgroundScanning") &&
+					interval == autoscan->limit) {
+		g_source_remove(autoscan->timeout);
+		autoscan->timeout = 0;
+
+		connman_device_unref(device);
+
+		return FALSE;
+	}
+
 set_interval:
 	DBG("interval %d", interval);
 
@@ -1409,19 +1431,25 @@ static struct autoscan_params *parse_autoscan_params(const char *params)
 	int limit;
 	int base;
 
-	DBG("Emulating autoscan");
+	DBG("");
 
 	list_params = g_strsplit(params, ":", 0);
 	if (list_params == 0)
 		return NULL;
 
-	if (g_strv_length(list_params) < 3) {
+	if (!g_strcmp0(list_params[0], "exponential") &&
+				g_strv_length(list_params) == 3) {
+		base = atoi(list_params[1]);
+		limit = atoi(list_params[2]);
+	} else if (!g_strcmp0(list_params[0], "single") &&
+				g_strv_length(list_params) == 2)
+		base = limit = atoi(list_params[1]);
+	else {
 		g_strfreev(list_params);
 		return NULL;
 	}
 
-	base = atoi(list_params[1]);
-	limit = atoi(list_params[2]);
+	DBG("Setup %s autoscanning", list_params[0]);
 
 	g_strfreev(list_params);
 
@@ -1440,10 +1468,37 @@ static struct autoscan_params *parse_autoscan_params(const char *params)
 
 static void setup_autoscan(struct wifi_data *wifi)
 {
-	if (!wifi->autoscan)
-		wifi->autoscan = parse_autoscan_params(AUTOSCAN_DEFAULT);
+	/*
+	 * If BackgroundScanning is enabled, setup exponential
+	 * autoscanning if it has not been previously done.
+	 */
+	if (connman_setting_get_bool("BackgroundScanning")) {
+		wifi->autoscan = parse_autoscan_params(AUTOSCAN_EXPONENTIAL);
+		return;
+	}
 
-	start_autoscan(wifi->device);
+	/*
+	 * On the contrary, if BackgroundScanning is disabled, update autoscan
+	 * parameters based on the type of scanning that is being performed.
+	 */
+	if (wifi->autoscan) {
+		g_free(wifi->autoscan);
+		wifi->autoscan = NULL;
+	}
+
+	switch (wifi->scanning_type) {
+	case WIFI_SCANNING_PASSIVE:
+		/* Do not setup autoscan. */
+		break;
+	case WIFI_SCANNING_ACTIVE:
+		/* Setup one single passive scan after active. */
+		wifi->autoscan = parse_autoscan_params(AUTOSCAN_SINGLE);
+		break;
+	case WIFI_SCANNING_UNKNOWN:
+		/* Setup autoscan in this case but we should never fall here. */
+		wifi->autoscan = parse_autoscan_params(AUTOSCAN_SINGLE);
+		break;
+	}
 }
 
 static void finalize_interface_creation(struct wifi_data *wifi)
@@ -1457,13 +1512,13 @@ static void finalize_interface_creation(struct wifi_data *wifi)
 
 	connman_device_set_powered(wifi->device, true);
 
-	if (!connman_setting_get_bool("BackgroundScanning"))
-		return;
-
 	if (wifi->p2p_device)
 		return;
 
-	setup_autoscan(wifi);
+	if (!wifi->autoscan)
+		setup_autoscan(wifi);
+
+	start_autoscan(wifi->device);
 }
 
 static void interface_create_callback(int result,
@@ -1691,9 +1746,28 @@ static int get_latest_connections(int max_ssids,
 	return num_ssids;
 }
 
+static void wifi_update_scanner_type(struct wifi_data *wifi,
+					enum wifi_scanning_type new_type)
+{
+	DBG("");
+
+	if (!wifi || wifi->scanning_type == new_type)
+		return;
+
+	wifi->scanning_type = new_type;
+
+	setup_autoscan(wifi);
+}
+
 static int wifi_scan_simple(struct connman_device *device)
 {
+	struct wifi_data *wifi = connman_device_get_data(device);
+
 	reset_autoscan(device);
+
+	/* Distinguish between devices performing passive and active scanning */
+	if (wifi)
+		wifi_update_scanner_type(wifi, WIFI_SCANNING_PASSIVE);
 
 	return throw_wifi_scan(device, scan_callback_hidden);
 }
@@ -1886,6 +1960,9 @@ static int wifi_scan(enum connman_service_type type,
 			return wifi_scan_simple(device);
 		}
 	}
+
+	/* Distinguish between devices performing passive and active scanning */
+	wifi_update_scanner_type(wifi, WIFI_SCANNING_ACTIVE);
 
 	connman_device_ref(device);
 
