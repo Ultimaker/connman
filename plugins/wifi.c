@@ -2370,17 +2370,20 @@ static void interface_state(GSupplicantInterface *interface)
 	if (!wifi)
 		return;
 
+	device = wifi->device;
+	if (!device)
+		return;
+
 	if (state == G_SUPPLICANT_STATE_COMPLETED) {
 		if (wifi->tethering_param) {
 			g_free(wifi->tethering_param->ssid);
 			g_free(wifi->tethering_param);
 			wifi->tethering_param = NULL;
 		}
-	}
 
-	device = wifi->device;
-	if (!device)
-		return;
+		if (wifi->tethering)
+			stop_autoscan(device);
+	}
 
 	if (g_supplicant_interface_get_ready(interface) &&
 					!wifi->interface_ready) {
