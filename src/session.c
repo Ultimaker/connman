@@ -361,8 +361,8 @@ static void del_default_route(struct connman_session *session)
 	DBG("index %d routing table %d default gateway %s/%u",
 		session->index, session->mark, session->gateway, session->prefixlen);
 
-		__connman_inet_del_subnet_from_table(session->mark,
-			session->index, session->gateway, session->prefixlen);
+	__connman_inet_del_subnet_from_table(session->mark,
+		session->index, session->gateway, session->prefixlen);
 
 	__connman_inet_del_default_from_table(session->mark,
 					session->index, session->gateway);
