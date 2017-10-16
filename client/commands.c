@@ -245,7 +245,7 @@ static int state_print(DBusMessageIter *iter, const char *error,
 	DBusMessageIter entry;
 
 	if (error) {
-		fprintf(stderr, "Error: %s", error);
+		fprintf(stderr, "Error: %s\n", error);
 		return 0;
 	}
 
@@ -272,7 +272,7 @@ static int clock_print(DBusMessageIter *iter, const char *error,
 	DBusMessageIter entry;
 
 	if (error) {
-		fprintf(stderr, "Error: %s", error);
+		fprintf(stderr, "Error: %s\n", error);
 		return 0;
 	}
 
@@ -1735,7 +1735,7 @@ static int session_connect_cb(DBusMessageIter *iter, const char *error,
 		void *user_data)
 {
 	if (error) {
-		fprintf(stderr, "Error: %s", error);
+		fprintf(stderr, "Error: %s\n", error);
 		return 0;
 	}
 
@@ -1754,7 +1754,7 @@ static int session_disconnect_cb(DBusMessageIter *iter, const char *error,
 		void *user_data)
 {
 	if (error)
-		fprintf(stderr, "Error: %s", error);
+		fprintf(stderr, "Error: %s\n", error);
 
 	return 0;
 }
@@ -3012,7 +3012,7 @@ static int populate_technology_hash(DBusMessageIter *iter, const char *error,
 				void *user_data)
 {
 	if (error) {
-		fprintf(stderr, "Error getting technologies: %s", error);
+		fprintf(stderr, "Error getting technologies: %s\n", error);
 		return 0;
 	}
 
