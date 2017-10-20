@@ -3947,6 +3947,11 @@ destroy:
 	return err;
 }
 
+int __connman_dnsproxy_set_mdns(int index, bool enabled)
+{
+	return -ENOTSUP;
+}
+
 void __connman_dnsproxy_cleanup(void)
 {
 	DBG("");

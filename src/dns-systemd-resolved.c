@@ -36,6 +36,11 @@
 #define SYSTEMD_RESOLVED_SERVICE "org.freedesktop.resolve1"
 #define SYSTEMD_RESOLVED_PATH "/org/freedesktop/resolve1"
 
+struct mdns_data {
+	int index;
+	bool enabled;
+};
+
 static GHashTable *interface_hash;
 static DBusConnection *connection;
 static GDBusClient *client;
@@ -394,6 +399,36 @@ static int setup_resolved(void)
 			"org.freedesktop.resolve1.Manager");
 
 	if (!resolved_proxy)
+		return -EINVAL;
+
+	return 0;
+}
+
+static void setlinkmulticastdns_append(DBusMessageIter *iter, void *user_data) {
+	struct mdns_data *data = user_data;
+	char *val = "no";
+
+	if (data->enabled)
+		val = "yes";
+
+	DBG("SetLinkMulticastDNS: %d/%s", data->index, val);
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_INT32, &data->index);
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, &val);
+}
+
+int __connman_dnsproxy_set_mdns(int index, bool enabled)
+{
+	struct mdns_data data = { .index = index, .enabled = enabled };
+
+	if (!resolved_proxy)
+		return -ENOENT;
+
+	if (index < 0)
+		return -EINVAL;
+
+	if (!g_dbus_proxy_method_call(resolved_proxy, "SetLinkMulticastDNS",
+			setlinkmulticastdns_append, NULL, &data, NULL))
 		return -EINVAL;
 
 	return 0;

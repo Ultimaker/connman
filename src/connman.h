@@ -952,6 +952,7 @@ int __connman_dnsproxy_add_listener(int index);
 void __connman_dnsproxy_remove_listener(int index);
 int __connman_dnsproxy_append(int index, const char *domain, const char *server);
 int __connman_dnsproxy_remove(int index, const char *domain, const char *server);
+int __connman_dnsproxy_set_mdns(int index, bool enabled);
 
 int __connman_6to4_probe(struct connman_service *service);
 void __connman_6to4_remove(struct connman_ipconfig *ipconfig);
