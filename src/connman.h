@@ -709,6 +709,8 @@ int __connman_service_set_ignore(struct connman_service *service,
 						bool ignore);
 void __connman_service_set_search_domains(struct connman_service *service,
 					char **domains);
+int __connman_service_set_mdns(struct connman_service *service,
+					bool enabled);
 
 void __connman_service_set_string(struct connman_service *service,
 					const char *key, const char *value);

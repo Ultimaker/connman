@@ -500,3 +500,16 @@ Properties	string State [readonly]
 				Possible values are "half" and "full".
 
 				This information is not available.
+
+		bool mDNS [readonly]
+
+			Whether or not mDNS support is enabled. Note
+			that mDNS requires a DNS backend which
+			supports it. Currently the only DNS backend
+			which supports mDNS is systemd-resolved.
+
+		bool mDNS.Configuration [readwrite]
+
+			Same values as mDNS property. The mDNS
+			represents the actual system configuration
+			while this allows user configuration.
