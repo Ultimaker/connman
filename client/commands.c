@@ -1202,6 +1202,30 @@ static int cmd_config(char *args[], int num, struct connman_option *options)
 					config_return, g_strdup(service_name),
 					NULL, NULL);
 			break;
+
+		case 'm':
+			switch (parse_boolean(*opt_start)) {
+			case 1:
+				val = TRUE;
+				break;
+			case 0:
+				val = FALSE;
+				break;
+			default:
+				res = -EINVAL;
+				break;
+			}
+			if (res == 0) {
+				res = __connmanctl_dbus_set_property(connection,
+						path, "net.connman.Service",
+						config_return,
+						g_strdup(service_name),
+						"mDNS.Configuration",
+						DBUS_TYPE_BOOLEAN, &val);
+			}
+			index++;
+			break;
+
 		default:
 			res = -EINVAL;
 			break;
@@ -2222,6 +2246,7 @@ static struct connman_option config_options[] = {
 	{"nameservers", 'n', "<dns1> [<dns2>] [<dns3>]"},
 	{"timeservers", 't', "<ntp1> [<ntp2>] [...]"},
 	{"domains", 'd', "<domain1> [<domain2>] [...]"},
+	{"mdns", 'm', "yes|no"},
 	{"ipv6", 'v', "off|auto [enable|disable|preferred]|\n"
 	              "\t\t\tmanual <address> <prefixlength> <gateway>"},
 	{"proxy", 'x', "direct|auto <URL>|manual <URL1> [<URL2>] [...]\n"
