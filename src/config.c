@@ -72,6 +72,7 @@ struct connman_config_service {
 	char *ipv6_gateway;
 	char *ipv6_privacy;
 	char *mac;
+	bool mdns;
 	char **nameservers;
 	char **search_domains;
 	char **timeservers;
@@ -112,6 +113,7 @@ static bool cleanup = false;
 #define SERVICE_KEY_PASSPHRASE         "Passphrase"
 #define SERVICE_KEY_SECURITY           "Security"
 #define SERVICE_KEY_HIDDEN             "Hidden"
+#define SERVICE_KEY_MDNS               "mDNS"
 
 #define SERVICE_KEY_IPv4               "IPv4"
 #define SERVICE_KEY_IPv6               "IPv6"
@@ -152,6 +154,7 @@ static const char *service_possible_keys[] = {
 	SERVICE_KEY_IPv6,
 	SERVICE_KEY_IPv6_PRIVACY,
 	SERVICE_KEY_MAC,
+	SERVICE_KEY_MDNS,
 	SERVICE_KEY_NAMESERVERS,
 	SERVICE_KEY_SEARCH_DOMAINS,
 	SERVICE_KEY_TIMESERVERS,
@@ -513,6 +516,9 @@ static bool load_service_generic(GKeyFile *keyfile,
 		} else
 			g_strfreev(strlist);
 	}
+
+	service->mdns = __connman_config_get_bool(keyfile, group,
+						SERVICE_KEY_MDNS, NULL);
 
 	return true;
 
@@ -1376,6 +1382,8 @@ static int try_provision_service(struct connman_config_service *config,
 	if (config->search_domains)
 		__connman_service_set_search_domains(service,
 						config->search_domains);
+
+	__connman_service_set_mdns(service, config->mdns);
 
 	if (config->timeservers)
 		__connman_service_set_timeservers(service,
