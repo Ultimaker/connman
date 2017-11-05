@@ -1,3 +1,10 @@
+connman (1.35-2) unstable; urgency=medium
+
+  * Fixed: main.conf is installed in wrong location
+    (LP: 1724574) Thanks Vasyl Vavrychuk <vavrychuk@gmail.com> for spotting
+
+ -- Alf Gaida <agaida@siduction.org>  Sun, 05 Nov 2017 04:17:15 +0100
+
 connman (1.35-1) unstable; urgency=medium
 
   * Adding upstream version 1.35.
