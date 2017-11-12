@@ -6430,6 +6430,8 @@ int __connman_service_disconnect(struct connman_service *service)
 
 	reply_pending(service, ECONNABORTED);
 
+	__connman_stats_service_unregister(service);
+
 	if (service->network) {
 		err = __connman_network_disconnect(service->network);
 	} else if (service->type == CONNMAN_SERVICE_TYPE_VPN &&
@@ -6458,8 +6460,6 @@ int __connman_service_disconnect(struct connman_service *service)
 
 	__connman_ipconfig_disable(service->ipconfig_ipv4);
 	__connman_ipconfig_disable(service->ipconfig_ipv6);
-
-	__connman_stats_service_unregister(service);
 
 	return err;
 }
