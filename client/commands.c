@@ -901,6 +901,13 @@ struct config_append {
 	int values;
 };
 
+struct session_options {
+	char **args;
+	int num;
+	char *notify_path;
+	struct connman_option *options;
+};
+
 static void config_append_ipv4(DBusMessageIter *iter,
 		void *user_data)
 {
@@ -1820,28 +1827,132 @@ static int session_create_cb(DBusMessageIter *iter, const char *error,
 	return -EINPROGRESS;
 }
 
-static void session_create_append(DBusMessageIter *iter, void *user_data)
+static void session_config_append_array(DBusMessageIter *iter,
+		void *user_data)
 {
-	const char *notify_path = user_data;
+	struct config_append *append = user_data;
+	char **opts = append->opts;
+	int i = 1;
 
-	__connmanctl_dbus_append_dict(iter, NULL, NULL);
+	if (!opts)
+		return;
 
-	dbus_message_iter_append_basic(iter, DBUS_TYPE_OBJECT_PATH,
-			&notify_path);
+	while (opts[i] && strncmp(opts[i], "--", 2) != 0) {
+		dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING,
+					       &opts[i]);
+		i++;
+	}
+
+	append->values = i;
 }
 
-static int session_create(gboolean connect)
+static void session_create_append_dict(DBusMessageIter *iter, void *user_data)
+{
+	struct session_options *args_struct = user_data;
+	int index = 0, res = 0;
+	struct config_append append;
+	char c;
+	char *ifname;
+	dbus_bool_t source_ip_rule;
+
+	while (index < args_struct->num && args_struct->args[index]) {
+		append.opts = &args_struct->args[index];
+		append.values = 0;
+
+		c = parse_args(args_struct->args[index], args_struct->options);
+
+		switch (c) {
+		case 'b':
+			__connmanctl_dbus_append_dict_string_array(iter, "AllowedBearers",
+								   session_config_append_array,
+								   &append);
+			break;
+		case 't':
+			if (! args_struct->args[index + 1]) {
+				res = -EINVAL;
+				break;
+			}
+			__connmanctl_dbus_append_dict_entry(iter, "ConnectionType",
+							    DBUS_TYPE_STRING,
+							    &args_struct->args[index + 1]);
+			append.values = 2;
+			break;
+		case 'i':
+			if (index + 1 <  args_struct->num)
+				ifname =  args_struct->args[index + 1];
+			else
+				ifname = "";
+			 __connmanctl_dbus_append_dict_entry(iter, "AllowedInterface",
+							     DBUS_TYPE_STRING,
+							     &ifname);
+			append.values = 2;
+			break;
+		case 's':
+			if (! args_struct->args[index + 1]) {
+				res = -EINVAL;
+				break;
+			}
+			switch (parse_boolean( args_struct->args[index + 1])) {
+			case 1:
+				source_ip_rule = TRUE;
+				break;
+			case 0:
+				source_ip_rule = FALSE;
+				break;
+			default:
+				res = -EINVAL;
+				break;
+			}
+			__connmanctl_dbus_append_dict_entry(iter, "SourceIPRule",
+							    DBUS_TYPE_BOOLEAN,
+							    &source_ip_rule);
+			append.values = 2;
+			break;
+		default:
+			res = -EINVAL;
+		}
+
+		if (res < 0 && res != -EINPROGRESS) {
+			printf("Error '%s': %s\n",  args_struct->args[index],
+					strerror(-res));
+			return;
+		}
+
+		index += append.values;
+	}
+
+	return;
+}
+
+static void session_create_append(DBusMessageIter *iter, void *user_data)
+{
+	struct session_options *args_struct = user_data;
+
+	__connmanctl_dbus_append_dict(iter, session_create_append_dict,
+				      args_struct);
+
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_OBJECT_PATH,
+				       &args_struct->notify_path);
+}
+
+static int session_create(gboolean connect, char *args[], int num,
+			  struct connman_option *options)
 {
 	int res;
 	char *notify_path;
+	struct session_options args_struct;
+	args_struct.args = args;
+	args_struct.num = num;
+	args_struct.options = options;
 
 	notify_path = g_strdup_printf("/net/connman/connmanctl%d", getpid());
 	session_notify_add(notify_path);
+	args_struct.notify_path = notify_path;
 
 	res = __connmanctl_dbus_method_call(connection, "net.connman", "/",
 			"net.connman.Manager", "CreateSession",
 			session_create_cb, GINT_TO_POINTER(connect),
-			session_create_append, notify_path);
+			session_create_append, &args_struct);
 
 	g_free(notify_path);
 
@@ -1893,25 +2004,6 @@ static int session_config_return(DBusMessageIter *iter, const char *error,
 				property_name, error);
 
 	return 0;
-}
-
-static void session_config_append_array(DBusMessageIter *iter,
-		void *user_data)
-{
-	struct config_append *append = user_data;
-	char **opts = append->opts;
-	int i = 1;
-
-	if (!opts)
-		return;
-
-	while (opts[i] && strncmp(opts[i], "--", 2) != 0) {
-		dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING,
-				&opts[i]);
-		i++;
-	}
-
-	append->values = i;
 }
 
 static int session_config(char *args[], int num,
@@ -2018,12 +2110,13 @@ static int cmd_session(char *args[], int num, struct connman_option *options)
 	case 1:
 		if (session_path)
 			return -EALREADY;
-		return session_create(FALSE);
+		return session_create(FALSE, &args[2], num - 2, options);
 
 	default:
 		if (!strcmp(command, "connect")) {
 			if (!session_path)
-				return session_create(TRUE);
+				return session_create(TRUE, &args[2], num - 2,
+						      options);
 
 			return session_connect();
 
