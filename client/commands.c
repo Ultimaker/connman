@@ -1908,6 +1908,16 @@ static void session_create_append_dict(DBusMessageIter *iter, void *user_data)
 							    &source_ip_rule);
 			append.values = 2;
 			break;
+		case 'c':
+			if (!args_struct->args[index + 1]) {
+				res = -EINVAL;
+				break;
+			}
+			__connmanctl_dbus_append_dict_entry(iter, "ContextIdentifier",
+							    DBUS_TYPE_STRING,
+							    &args_struct->args[index + 1]);
+			append.values = 2;
+			break;
 		default:
 			res = -EINVAL;
 		}
@@ -2075,6 +2085,18 @@ static int session_config(char *args[], int num,
 					DBUS_TYPE_BOOLEAN, &source_ip_rule);
 			append.values = 2;
 			break;
+		case 'c':
+				if (!args[index + 1]) {
+					res = -EINVAL;
+					break;
+				}
+
+				res = __connmanctl_dbus_session_change(connection,
+						session_path, session_config_return,
+						"ctxid", "ctxid", DBUS_TYPE_STRING,
+						&args[index + 1]);
+				append.values = 2;
+				break;
 
 		default:
 			res = -EINVAL;
@@ -2366,6 +2388,7 @@ static struct connman_option session_options[] = {
 	{"type", 't', "local|internet|any"},
 	{"ifname", 'i', "[<interface_name>]"},
 	{"srciprule", 's', "yes|no"},
+	{"ctxid", 'c', "<context_identifier>"},
 	{ NULL, }
 };
 
