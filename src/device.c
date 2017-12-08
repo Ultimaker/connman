@@ -152,6 +152,28 @@ enum connman_service_type __connman_device_get_service_type(
 	return CONNMAN_SERVICE_TYPE_UNKNOWN;
 }
 
+static bool device_has_service_type(struct connman_device *device,
+				enum connman_service_type service_type)
+{
+	enum connman_service_type device_service_type =
+		__connman_device_get_service_type(device);
+
+	/*
+	 * For devices whose device_service_type is unknown we should
+	 * allow to decide whether they support specific service_type
+	 * by themself.
+	 */
+	if (device_service_type == CONNMAN_SERVICE_TYPE_UNKNOWN)
+		return true;
+
+	if (device_service_type == CONNMAN_SERVICE_TYPE_WIFI) {
+		return service_type == CONNMAN_SERVICE_TYPE_WIFI ||
+			service_type == CONNMAN_SERVICE_TYPE_P2P;
+	}
+
+	return service_type == device_service_type;
+}
+
 static gboolean device_pending_reset(gpointer user_data)
 {
 	struct connman_device *device = user_data;
@@ -1066,16 +1088,9 @@ int __connman_device_request_scan(enum connman_service_type type)
 
 	for (list = device_list; list; list = list->next) {
 		struct connman_device *device = list->data;
-		enum connman_service_type service_type =
-			__connman_device_get_service_type(device);
 
-		if (service_type != CONNMAN_SERVICE_TYPE_UNKNOWN) {
-			if (type == CONNMAN_SERVICE_TYPE_P2P) {
-				if (service_type != CONNMAN_SERVICE_TYPE_WIFI)
-					continue;
-			} else if (service_type != type)
-				continue;
-		}
+		if (!device_has_service_type(device, type))
+			continue;
 
 		err = device_scan(type, device);
 		if (err == 0 || err == -EALREADY || err == -EINPROGRESS) {
