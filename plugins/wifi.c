@@ -1986,6 +1986,24 @@ static int wifi_scan(enum connman_service_type type,
 	return ret;
 }
 
+static void wifi_stop_scan(enum connman_service_type type,
+			struct connman_device *device)
+{
+	struct wifi_data *wifi = connman_device_get_data(device);
+
+	DBG("device %p wifi %p", device, wifi);
+
+	if (!wifi)
+		return;
+
+	if (type == CONNMAN_SERVICE_TYPE_P2P) {
+		if (wifi->p2p_find_timeout) {
+			g_source_remove(wifi->p2p_find_timeout);
+			p2p_find_stop(device);
+		}
+	}
+}
+
 static void wifi_regdom_callback(int result,
 					const char *alpha2,
 						void *user_data)
@@ -2025,6 +2043,7 @@ static struct connman_device_driver wifi_ng_driver = {
 	.enable		= wifi_enable,
 	.disable	= wifi_disable,
 	.scan		= wifi_scan,
+	.stop_scan	= wifi_stop_scan,
 	.set_regdom	= wifi_set_regdom,
 };
 
