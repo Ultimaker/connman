@@ -2918,6 +2918,10 @@ static void network_associated(GSupplicantNetwork *network)
 	if (!wifi)
 		return;
 
+	/* P2P networks must not be treated as WiFi networks */
+	if (wifi->p2p_connecting || wifi->p2p_device)
+		return;
+
 	identifier = g_supplicant_network_get_identifier(network);
 
 	connman_network = connman_device_get_network(wifi->device, identifier);
