@@ -41,6 +41,13 @@
  */
 #define RS_REFRESH_TIMEOUT	3
 
+/*
+ * As per RFC 4861, a host should transmit up to MAX_RTR_SOLICITATIONS(3)
+ * Router Solicitation messages, each separated by at least
+ * RTR_SOLICITATION_INTERVAL(4) seconds to obtain RA for IPv6 auto-configuration.
+ */
+#define RTR_SOLICITATION_INTERVAL	4
+
 static GSList *network_list = NULL;
 static GSList *driver_list = NULL;
 
@@ -427,7 +434,7 @@ static void check_dhcpv6(struct nd_router_advert *reply,
 			DBG("re-send router solicitation %d",
 						network->router_solicit_count);
 			network->router_solicit_count--;
-			__connman_inet_ipv6_send_rs(network->index, 1,
+			__connman_inet_ipv6_send_rs(network->index, RTR_SOLICITATION_INTERVAL,
 						check_dhcpv6, network);
 			return;
 		}
@@ -577,7 +584,8 @@ static void autoconf_ipv6_set(struct connman_network *network)
 
 	/* Try to get stateless DHCPv6 information, RFC 3736 */
 	network->router_solicit_count = 3;
-	__connman_inet_ipv6_send_rs(index, 1, check_dhcpv6, network);
+	__connman_inet_ipv6_send_rs(index, RTR_SOLICITATION_INTERVAL,
+			check_dhcpv6, network);
 }
 
 static void set_connected(struct connman_network *network)
