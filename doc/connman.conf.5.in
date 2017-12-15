@@ -151,6 +151,11 @@ connectivity is successful. Only then the service will be
 transitioned to ONLINE state.
 If this setting is false, the default service will remain in READY state.
 Default value is true.
+.TP
+.BI AutoConnectRoamingServices=true\ \fR|\fB\ false
+Automatically connect roaming services. This is not recommended unless you know
+you won't have any billing problem.
+Default value is false.
 .SH "EXAMPLE"
 The following example configuration disables hostname updates and enables
 ethernet tethering.
