@@ -79,6 +79,7 @@ static struct {
 	bool enable_6to4;
 	char *vendor_class_id;
 	bool enable_online_check;
+	bool auto_connect_roaming_services;
 } connman_settings  = {
 	.bg_scan = true,
 	.pref_timeservers = NULL,
@@ -96,6 +97,7 @@ static struct {
 	.enable_6to4 = false,
 	.vendor_class_id = NULL,
 	.enable_online_check = true,
+	.auto_connect_roaming_services = false,
 };
 
 #define CONF_BG_SCAN                    "BackgroundScanning"
@@ -114,6 +116,7 @@ static struct {
 #define CONF_ENABLE_6TO4                "Enable6to4"
 #define CONF_VENDOR_CLASS_ID            "VendorClassID"
 #define CONF_ENABLE_ONLINE_CHECK        "EnableOnlineCheck"
+#define CONF_AUTO_CONNECT_ROAMING_SERVICES "AutoConnectRoamingServices"
 
 static const char *supported_options[] = {
 	CONF_BG_SCAN,
@@ -132,6 +135,7 @@ static const char *supported_options[] = {
 	CONF_ENABLE_6TO4,
 	CONF_VENDOR_CLASS_ID,
 	CONF_ENABLE_ONLINE_CHECK,
+	CONF_AUTO_CONNECT_ROAMING_SERVICES,
 	NULL
 };
 
@@ -408,6 +412,13 @@ static void parse_config(GKeyFile *config)
 	}
 
 	g_clear_error(&error);
+
+	boolean = __connman_config_get_bool(config, "General",
+				CONF_AUTO_CONNECT_ROAMING_SERVICES, &error);
+	if (!error)
+		connman_settings.auto_connect_roaming_services = boolean;
+
+	g_clear_error(&error);
 }
 
 static int config_init(const char *file)
@@ -614,6 +625,9 @@ bool connman_setting_get_bool(const char *key)
 
 	if (g_str_equal(key, CONF_ENABLE_ONLINE_CHECK))
 		return connman_settings.enable_online_check;
+
+	if (g_str_equal(key, CONF_AUTO_CONNECT_ROAMING_SERVICES))
+		return connman_settings.auto_connect_roaming_services;
 
 	return false;
 }
