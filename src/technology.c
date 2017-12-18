@@ -787,6 +787,7 @@ static int technology_disable(struct connman_technology *technology)
 
 	if (technology->type == CONNMAN_SERVICE_TYPE_P2P) {
 		technology->enable_persistent = false;
+		__connman_device_stop_scan(CONNMAN_SERVICE_TYPE_P2P);
 		return technology_disabled(technology);
 	} else if (technology->type == CONNMAN_SERVICE_TYPE_WIFI) {
 		struct connman_technology *p2p;
