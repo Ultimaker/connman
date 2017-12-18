@@ -1123,6 +1123,21 @@ int __connman_device_request_hidden_scan(struct connman_device *device,
 					passphrase, security, user_data);
 }
 
+void __connman_device_stop_scan(enum connman_service_type type)
+{
+	GSList *list;
+
+	for (list = device_list; list; list = list->next) {
+		struct connman_device *device = list->data;
+
+		if (!device_has_service_type(device, type))
+			continue;
+
+		if (device->driver && device->driver->stop_scan)
+			device->driver->stop_scan(type, device);
+	}
+}
+
 static char *index2ident(int index, const char *prefix)
 {
 	struct ifreq ifr;
