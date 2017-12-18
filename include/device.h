@@ -124,6 +124,8 @@ struct connman_device_driver {
 			const char *ssid, unsigned int ssid_len,
 			const char *identity, const char* passphrase,
 			const char *security, void *user_data);
+	void (*stop_scan) (enum connman_service_type type,
+			struct connman_device *device);
 	int (*set_regdom) (struct connman_device *device,
 						const char *alpha2);
 };
