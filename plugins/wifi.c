@@ -1216,7 +1216,7 @@ static int throw_wifi_scan(struct connman_device *device,
 	if (wifi->tethering)
 		return -EBUSY;
 
-	if (connman_device_get_scanning(device))
+	if (connman_device_get_scanning(device, CONNMAN_SERVICE_TYPE_WIFI))
 		return -EALREADY;
 
 	connman_device_ref(device);
@@ -1290,7 +1290,7 @@ static void scan_callback(int result, GSupplicantInterface *interface,
 		return scan_callback(ret, interface, user_data);
 	}
 
-	scanning = connman_device_get_scanning(device);
+	scanning = connman_device_get_scanning(device, CONNMAN_SERVICE_TYPE_WIFI);
 
 	if (scanning) {
 		connman_device_set_scanning(device,
@@ -1598,7 +1598,7 @@ static int wifi_disable(struct connman_device *device)
 	}
 
 	/* In case of a user scan, device is still referenced */
-	if (connman_device_get_scanning(device)) {
+	if (connman_device_get_scanning(device, CONNMAN_SERVICE_TYPE_WIFI)) {
 		connman_device_set_scanning(device,
 				CONNMAN_SERVICE_TYPE_WIFI, false);
 		connman_device_unref(wifi->device);
@@ -1886,7 +1886,7 @@ static int wifi_scan(enum connman_service_type type,
 
 	DBG("device %p wifi %p hidden ssid %s", device, wifi->interface, ssid);
 
-	scanning = connman_device_get_scanning(device);
+	scanning = connman_device_get_scanning(device, CONNMAN_SERVICE_TYPE_WIFI);
 
 	if (!ssid || ssid_len == 0 || ssid_len > 32) {
 		if (scanning)

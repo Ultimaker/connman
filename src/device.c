@@ -52,7 +52,7 @@ struct connman_device {
 							 * request
 							 */
 	bool powered;
-	bool scanning;
+	bool scanning[MAX_CONNMAN_SERVICE_TYPES];
 	char *name;
 	char *node;
 	char *address;
@@ -588,6 +588,7 @@ int connman_device_set_powered(struct connman_device *device,
 						bool powered)
 {
 	enum connman_service_type type;
+	int i;
 
 	DBG("device %p powered %d", device, powered);
 
@@ -609,7 +610,8 @@ int connman_device_set_powered(struct connman_device *device,
 
 	__connman_technology_enabled(type);
 
-	device->scanning = false;
+	for (i = 0; i < MAX_CONNMAN_SERVICE_TYPES; i++)
+		device->scanning[i] = false;
 
 	if (device->driver && device->driver->scan)
 		device->driver->scan(CONNMAN_SERVICE_TYPE_UNKNOWN, device,
@@ -719,9 +721,19 @@ void __connman_device_cleanup_networks(struct connman_device *device)
 					remove_unavailable_network, NULL);
 }
 
-bool connman_device_get_scanning(struct connman_device *device)
+bool connman_device_get_scanning(struct connman_device *device,
+				enum connman_service_type type)
 {
-	return device->scanning;
+	int i;
+
+	if (type != CONNMAN_SERVICE_TYPE_UNKNOWN)
+		return device->scanning[type];
+
+	for (i = 0; i < MAX_CONNMAN_SERVICE_TYPES; i++)
+		if (device->scanning[i])
+			return true;
+
+	return false;
 }
 
 void connman_device_reset_scanning(struct connman_device *device)
@@ -748,10 +760,10 @@ int connman_device_set_scanning(struct connman_device *device,
 	if (type == CONNMAN_SERVICE_TYPE_UNKNOWN)
 		return -EINVAL;
 
-	if (device->scanning == scanning)
+	if (device->scanning[type] == scanning)
 		return -EALREADY;
 
-	device->scanning = scanning;
+	device->scanning[type] = scanning;
 
 	if (scanning) {
 		__connman_technology_scan_started(device);
