@@ -900,7 +900,7 @@ static void wifi_remove(struct connman_device *device)
 
 	remove_pending_wifi_device(wifi);
 
-	if (wifi->p2p_find_timeout) {
+	if (connman_device_get_scanning(device, CONNMAN_SERVICE_TYPE_P2P)) {
 		g_source_remove(wifi->p2p_find_timeout);
 		connman_device_unref(wifi->device);
 	}
@@ -1590,7 +1590,7 @@ static int wifi_disable(struct connman_device *device)
 
 	stop_autoscan(device);
 
-	if (wifi->p2p_find_timeout) {
+	if (connman_device_get_scanning(device, CONNMAN_SERVICE_TYPE_P2P)) {
 		g_source_remove(wifi->p2p_find_timeout);
 		wifi->p2p_find_timeout = 0;
 		connman_device_set_scanning(device, CONNMAN_SERVICE_TYPE_P2P, false);
@@ -1997,7 +1997,7 @@ static void wifi_stop_scan(enum connman_service_type type,
 		return;
 
 	if (type == CONNMAN_SERVICE_TYPE_P2P) {
-		if (wifi->p2p_find_timeout) {
+		if (connman_device_get_scanning(device, CONNMAN_SERVICE_TYPE_P2P)) {
 			g_source_remove(wifi->p2p_find_timeout);
 			p2p_find_stop(device);
 		}
