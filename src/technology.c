@@ -1023,9 +1023,6 @@ void __connman_technology_scan_stopped(struct connman_device *device,
 		if (device == other_device)
 			continue;
 
-		if (__connman_device_get_service_type(other_device) != type)
-			continue;
-
 		if (connman_device_get_scanning(other_device, type))
 			count += 1;
 	}
