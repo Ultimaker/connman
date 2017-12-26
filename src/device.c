@@ -745,6 +745,9 @@ int connman_device_set_scanning(struct connman_device *device,
 	if (!device->driver || !device->driver->scan)
 		return -EINVAL;
 
+	if (type == CONNMAN_SERVICE_TYPE_UNKNOWN)
+		return -EINVAL;
+
 	if (device->scanning == scanning)
 		return -EALREADY;
 
