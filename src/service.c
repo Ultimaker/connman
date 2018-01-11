@@ -44,8 +44,8 @@ static DBusConnection *connection = NULL;
 static GList *service_list = NULL;
 static GHashTable *service_hash = NULL;
 static GSList *counter_list = NULL;
-static unsigned int autoconnect_timeout = 0;
-static unsigned int vpn_autoconnect_timeout = 0;
+static unsigned int autoconnect_id = 0;
+static unsigned int vpn_autoconnect_id = 0;
 static struct connman_service *current_default = NULL;
 static bool services_dirty = false;
 
@@ -4062,7 +4062,7 @@ static gboolean run_auto_connect(gpointer data)
 	bool autoconnecting = false;
 	GList *preferred_tech;
 
-	autoconnect_timeout = 0;
+	autoconnect_id = 0;
 
 	DBG("");
 
@@ -4083,13 +4083,13 @@ void __connman_service_auto_connect(enum connman_service_connect_reason reason)
 {
 	DBG("");
 
-	if (autoconnect_timeout != 0)
+	if (autoconnect_id != 0)
 		return;
 
 	if (!__connman_session_policy_autoconnect(reason))
 		return;
 
-	autoconnect_timeout = g_idle_add(run_auto_connect,
+	autoconnect_id = g_idle_add(run_auto_connect,
 						GUINT_TO_POINTER(reason));
 }
 
@@ -4097,7 +4097,7 @@ static gboolean run_vpn_auto_connect(gpointer data) {
 	GList *list;
 	bool need_split = false;
 
-	vpn_autoconnect_timeout = 0;
+	vpn_autoconnect_id = 0;
 
 	for (list = service_list; list; list = list->next) {
 		struct connman_service *service = list->data;
@@ -4139,10 +4139,10 @@ static gboolean run_vpn_auto_connect(gpointer data) {
 
 static void vpn_auto_connect(void)
 {
-	if (vpn_autoconnect_timeout)
+	if (vpn_autoconnect_id)
 		return;
 
-	vpn_autoconnect_timeout =
+	vpn_autoconnect_id =
 		g_idle_add(run_vpn_auto_connect, NULL);
 }
 
@@ -7436,14 +7436,14 @@ void __connman_service_cleanup(void)
 {
 	DBG("");
 
-	if (vpn_autoconnect_timeout) {
-		g_source_remove(vpn_autoconnect_timeout);
-		vpn_autoconnect_timeout = 0;
+	if (vpn_autoconnect_id) {
+		g_source_remove(vpn_autoconnect_id);
+		vpn_autoconnect_id = 0;
 	}
 
-	if (autoconnect_timeout != 0) {
-		g_source_remove(autoconnect_timeout);
-		autoconnect_timeout = 0;
+	if (autoconnect_id != 0) {
+		g_source_remove(autoconnect_id);
+		autoconnect_id = 0;
 	}
 
 	connman_agent_driver_unregister(&agent_driver);
