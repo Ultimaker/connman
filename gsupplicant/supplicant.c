@@ -1611,6 +1611,11 @@ static int add_or_replace_bss_to_network(struct g_supplicant_bss *bss)
 	network->frequency = bss->frequency;
 	network->best_bss = bss;
 
+	if ((bss->keymgmt & G_SUPPLICANT_KEYMGMT_WPS) != 0) {
+		network->wps = TRUE;
+		network->wps_capabilities = bss->wps_capabilities;
+	}
+
 	SUPPLICANT_DBG("New network %s created", network->name);
 
 	network->bss_table = g_hash_table_new_full(g_str_hash, g_str_equal,
@@ -1628,7 +1633,7 @@ done:
 	/* We update network's WPS properties if only bss provides WPS. */
 	if ((bss->keymgmt & G_SUPPLICANT_KEYMGMT_WPS) != 0) {
 		network->wps = TRUE;
-		network->wps_capabilities |= bss->wps_capabilities;
+		network->wps_capabilities = bss->wps_capabilities;
 	}
 
 	/*
@@ -2725,6 +2730,7 @@ static void signal_bss_changed(const char *path, DBusMessageIter *iter)
 	GSupplicantInterface *interface;
 	GSupplicantNetwork *network;
 	GSupplicantSecurity old_security;
+	unsigned int old_wps_capabilities;
 	struct g_supplicant_bss *bss;
 
 	SUPPLICANT_DBG("");
@@ -2798,6 +2804,11 @@ static void signal_bss_changed(const char *path, DBusMessageIter *iter)
 
 		return;
 	}
+
+	old_wps_capabilities = network->wps_capabilities;
+
+	if (old_wps_capabilities != bss->wps_capabilities)
+		network->wps_capabilities = bss->wps_capabilities;
 
 	/* Consider only property changes of the connected BSS */
 	if (network == interface->current_network && bss != network->best_bss)
