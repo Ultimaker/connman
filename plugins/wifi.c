@@ -2881,6 +2881,7 @@ static void network_changed(GSupplicantNetwork *network, const char *property)
 	struct wifi_data *wifi;
 	const char *name, *identifier;
 	struct connman_network *connman_network;
+	bool update_needed;
 
 	interface = g_supplicant_network_get_interface(network);
 	wifi = g_supplicant_interface_get_data(interface);
@@ -2896,11 +2897,42 @@ static void network_changed(GSupplicantNetwork *network, const char *property)
 	if (!connman_network)
 		return;
 
-	if (g_str_equal(property, "Signal")) {
-	       connman_network_set_strength(connman_network,
+	if (g_str_equal(property, "WPSCapabilities")) {
+		bool wps;
+		bool wps_pbc;
+		bool wps_ready;
+		bool wps_advertizing;
+
+		wps = g_supplicant_network_get_wps(network);
+		wps_pbc = g_supplicant_network_is_wps_pbc(network);
+		wps_ready = g_supplicant_network_is_wps_active(network);
+		wps_advertizing =
+			g_supplicant_network_is_wps_advertizing(network);
+
+		connman_network_set_bool(connman_network, "WiFi.WPS", wps);
+		connman_network_set_bool(connman_network,
+				"WiFi.WPSAdvertising", wps_advertizing);
+
+		if (wps) {
+			/*
+			 * Is AP advertizing for WPS association?
+			 * If so, we decide to use WPS by default
+			 */
+			if (wps_ready && wps_pbc && wps_advertizing)
+				connman_network_set_bool(connman_network,
+							"WiFi.UseWPS", true);
+		}
+
+		update_needed = true;
+	} else if (g_str_equal(property, "Signal")) {
+		connman_network_set_strength(connman_network,
 					calculate_strength(network));
-	       connman_network_update(connman_network);
-	}
+		update_needed = true;
+	} else
+		update_needed = false;
+
+	if (update_needed)
+		connman_network_update(connman_network);
 }
 
 static void network_associated(GSupplicantNetwork *network)

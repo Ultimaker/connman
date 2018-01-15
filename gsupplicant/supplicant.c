@@ -1577,6 +1577,7 @@ static int add_or_replace_bss_to_network(struct g_supplicant_bss *bss)
 	GSupplicantInterface *interface = bss->interface;
 	GSupplicantNetwork *network;
 	char *group;
+	bool is_new_network;
 
 	group = create_group(bss);
 	SUPPLICANT_DBG("New group created: %s", group);
@@ -1588,9 +1589,12 @@ static int add_or_replace_bss_to_network(struct g_supplicant_bss *bss)
 	if (network) {
 		g_free(group);
 		SUPPLICANT_DBG("Network %s already exist", network->name);
+		is_new_network = false;
 
 		goto done;
 	}
+
+	is_new_network = true;
 
 	network = g_try_new0(GSupplicantNetwork, 1);
 	if (!network) {
@@ -1634,6 +1638,9 @@ done:
 	if ((bss->keymgmt & G_SUPPLICANT_KEYMGMT_WPS) != 0) {
 		network->wps = TRUE;
 		network->wps_capabilities = bss->wps_capabilities;
+
+		if (!is_new_network)
+			callback_network_changed(network, "WPSCapabilities");
 	}
 
 	/*
@@ -2807,8 +2814,10 @@ static void signal_bss_changed(const char *path, DBusMessageIter *iter)
 
 	old_wps_capabilities = network->wps_capabilities;
 
-	if (old_wps_capabilities != bss->wps_capabilities)
+	if (old_wps_capabilities != bss->wps_capabilities) {
 		network->wps_capabilities = bss->wps_capabilities;
+		callback_network_changed(network, "WPSCapabilities");
+	}
 
 	/* Consider only property changes of the connected BSS */
 	if (network == interface->current_network && bss != network->best_bss)
