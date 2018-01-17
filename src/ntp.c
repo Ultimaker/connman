@@ -212,7 +212,7 @@ static void send_packet(struct ntp_data *nd, struct sockaddr *server,
 			inet_ntop(server->sa_family, addr, ipaddrstring, sizeof(ipaddrstring)),
 			errno, strerror(errno));
 
-		if (errno == ENETUNREACH)
+		if (errno == ENETUNREACH || errno == EPERM)
 			nd->cb(false, nd->user_data);
 
 		return;
