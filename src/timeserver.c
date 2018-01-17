@@ -41,6 +41,8 @@ static int ts_recheck_id = 0;
 static GResolv *resolv = NULL;
 static int resolv_id = 0;
 
+static void sync_next(void);
+
 static void resolv_debug(const char *str, void *data)
 {
 	connman_info("%s: %s\n", (const char *) data, str);
@@ -51,7 +53,7 @@ static void ntp_callback(bool success, void *user_data)
 	DBG("success %d", success);
 
 	if (!success)
-		__connman_timeserver_sync_next();
+		sync_next();
 }
 
 static void save_timeservers(char **servers)
@@ -119,7 +121,7 @@ static void resolv_result(GResolvResultStatus status, char **results,
 	}
 
 	/* If resolving fails, move to the next server */
-	__connman_timeserver_sync_next();
+	sync_next();
 }
 
 /*
@@ -129,7 +131,7 @@ static void resolv_result(GResolvResultStatus status, char **results,
  * timeserver. We only resolve the URLs. Once we have an IP for the NTP
  * server, we start querying it for time corrections.
  */
-void __connman_timeserver_sync_next()
+static void sync_next()
 {
 	if (ts_current) {
 		g_free(ts_current);
@@ -349,7 +351,7 @@ int __connman_timeserver_sync(struct connman_service *default_service)
 
 	ts_recheck_enable();
 
-	__connman_timeserver_sync_next();
+	sync_next();
 
 	return 0;
 }
