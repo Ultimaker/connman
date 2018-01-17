@@ -45,6 +45,15 @@ static void resolv_debug(const char *str, void *data)
 {
 	connman_info("%s: %s\n", (const char *) data, str);
 }
+
+static void ntp_callback(bool success, void *user_data)
+{
+	DBG("success %d", success);
+
+	if (!success)
+		__connman_timeserver_sync_next();
+}
+
 static void save_timeservers(char **servers)
 {
 	GKeyFile *keyfile;
@@ -103,7 +112,7 @@ static void resolv_result(GResolvResultStatus status, char **results,
 
 			DBG("Using timeserver %s", results[0]);
 
-			__connman_ntp_start(results[0]);
+			__connman_ntp_start(results[0], ntp_callback, NULL);
 
 			return;
 		}
@@ -141,7 +150,7 @@ void __connman_timeserver_sync_next()
 	if (connman_inet_check_ipaddress(ts_current) > 0) {
 		DBG("Using timeserver %s", ts_current);
 
-		__connman_ntp_start(ts_current);
+		__connman_ntp_start(ts_current, ntp_callback, NULL);
 
 		return;
 	}

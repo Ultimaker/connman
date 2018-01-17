@@ -128,6 +128,8 @@ struct ntp_data {
 	guint channel_watch;
 	gint poll_id;
 	uint32_t timeout;
+	__connman_ntp_cb_t cb;
+	void *user_data;
 };
 
 static struct ntp_data *ntp_data;
@@ -148,16 +150,6 @@ static void free_ntp_data(struct ntp_data *nd)
 static void send_packet(struct ntp_data *nd, struct sockaddr *server,
 			uint32_t timeout);
 
-static void next_server(struct ntp_data *data)
-{
-	if (data->timeserver) {
-		g_free(data->timeserver);
-		data->timeserver = NULL;
-	}
-
-	__connman_timeserver_sync_next();
-}
-
 static gboolean send_timeout(gpointer user_data)
 {
 	struct ntp_data *nd = user_data;
@@ -165,7 +157,7 @@ static gboolean send_timeout(gpointer user_data)
 	DBG("send timeout %u (retries %d)", nd->timeout, nd->retries);
 
 	if (nd->retries++ == NTP_SEND_RETRIES)
-		next_server(nd);
+		nd->cb(false, nd->user_data);
 	else
 		send_packet(nd,	(struct sockaddr *)&nd->timeserver_addr,
 			nd->timeout << 1);
@@ -221,7 +213,7 @@ static void send_packet(struct ntp_data *nd, struct sockaddr *server,
 			errno, strerror(errno));
 
 		if (errno == ENETUNREACH)
-			__connman_timeserver_sync_next();
+			nd->cb(false, nd->user_data);
 
 		return;
 	}
@@ -303,7 +295,7 @@ static void decode_msg(struct ntp_data *nd, void *base, size_t len,
 		connman_info("Skipping server %s KoD code %c%c%c%c",
 			nd->timeserver, code >> 24, code >> 16 & 0xff,
 			code >> 8 & 0xff, code & 0xff);
-		next_server(nd);
+		nd->cb(false, nd->user_data);
 		return;
 	}
 
@@ -311,6 +303,7 @@ static void decode_msg(struct ntp_data *nd, void *base, size_t len,
 
 	if (NTP_FLAGS_LI_DECODE(msg->flags) == NTP_FLAG_LI_NOTINSYNC) {
 		DBG("ignoring unsynchronized peer");
+		nd->cb(false, nd->user_data);
 		return;
 	}
 
@@ -321,12 +314,14 @@ static void decode_msg(struct ntp_data *nd, void *base, size_t len,
 				NTP_FLAG_VN_VER4, NTP_FLAGS_VN_DECODE(msg->flags));
 		} else {
 			DBG("unsupported version %d", NTP_FLAGS_VN_DECODE(msg->flags));
+			nd->cb(false, nd->user_data);
 			return;
 		}
 	}
 
 	if (NTP_FLAGS_MD_DECODE(msg->flags) != NTP_FLAG_MD_SERVER) {
 		DBG("unsupported mode %d", NTP_FLAGS_MD_DECODE(msg->flags));
+		nd->cb(false, nd->user_data);
 		return;
 	}
 
@@ -397,11 +392,14 @@ static void decode_msg(struct ntp_data *nd, void *base, size_t len,
 
 	if (adjtimex(&tmx) < 0) {
 		connman_error("Failed to adjust time");
+		nd->cb(false, nd->user_data);
 		return;
 	}
 
 	DBG("interval/delta/delay/drift %fs/%+.3fs/%.3fs/%+ldppm",
 		LOGTOD(msg->poll), offset, delay, tmx.freq / 65536);
+
+	nd->cb(true, nd->user_data);
 }
 
 static gboolean received_data(GIOChannel *channel, GIOCondition condition,
@@ -581,7 +579,8 @@ send:
 		NTP_SEND_TIMEOUT);
 }
 
-int __connman_ntp_start(char *server)
+int __connman_ntp_start(char *server, __connman_ntp_cb_t callback,
+			void *user_data)
 {
 	if (!server)
 		return -EINVAL;
@@ -595,6 +594,8 @@ int __connman_ntp_start(char *server)
 	ntp_data = g_new0(struct ntp_data, 1);
 
 	ntp_data->timeserver = g_strdup(server);
+	ntp_data->cb = callback;
+	ntp_data->user_data = user_data;
 
 	start_ntp(ntp_data);
 
