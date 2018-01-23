@@ -187,8 +187,15 @@ Properties	string State [readonly]
 			present and contains the list of security methods
 			or key management settings.
 
-			Possible values are "none", "wep", "psk", "ieee8021x"
-			and also "wps".
+			Possible values are "none", "wep", "psk", "ieee8021x",
+			and also "wps" and "wps_advertising".
+
+			Value "wps" means that the service supports WPS. A
+			service advertising itself as WPS registrar contains
+			the additional value "wps_advertising" for as long as
+			it is advertising. That is, while "wps_advertising" is
+			listed, WPS is active and it should be possible to
+			connect to the corresponding service via WPS.
 
 			This property might be only present for WiFi
 			services.
