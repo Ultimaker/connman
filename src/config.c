@@ -570,8 +570,8 @@ static bool load_service(GKeyFile *keyfile, const char *group,
 		g_free(service->type);
 		service->type = str;
 	} else {
-		DBG("Type of the configured service is missing for group %s",
-									group);
+		connman_warn("Type of the configured service is missing "
+			"for group %s",	group);
 		goto err;
 	}
 
@@ -808,8 +808,11 @@ static bool load_service_from_keyfile(GKeyFile *keyfile,
 	groups = g_key_file_get_groups(keyfile, NULL);
 
 	for (i = 0; groups[i]; i++) {
-		if (!g_str_has_prefix(groups[i], "service_"))
+		if (!g_str_has_prefix(groups[i], "service_")) {
+			connman_warn("Ignore group named '%s' because prefix "
+				"is not 'service_'", groups[i]);
 			continue;
+		}
 		if (load_service(keyfile, groups[i], config))
 			found = true;
 	}

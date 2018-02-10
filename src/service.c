@@ -6261,8 +6261,15 @@ static int service_connect(struct connman_service *service)
 			break;
 
 		case CONNMAN_SERVICE_SECURITY_8021X:
-			if (!service->eap)
+			if (!service->eap) {
+				connman_warn("EAP type has not been found. "
+					"Most likely ConnMan is not able to "
+					"find a configuration for given "
+					"8021X network. "
+					"Check SSID or Name match with the "
+					"network name.");
 				return -EINVAL;
+			}
 
 			/*
 			 * never request credentials if using EAP-TLS
