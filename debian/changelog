@@ -1,3 +1,10 @@
+connman (1.35-2.1) UNRELEASED; urgency=medium
+
+  * Non-maintainer upload
+  * Use dh_ppp to generate Breaks for ppp (Closes: #890207)
+
+ -- Chris Boot <bootc@debian.org>  Sun, 11 Feb 2018 21:14:47 +0000
+
 connman (1.35-2) unstable; urgency=medium
 
   * Fixed: main.conf is installed in wrong location
