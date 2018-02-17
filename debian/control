@@ -1,11 +1,9 @@
 Source: connman
 Maintainer: Alexander Sack <asac@debian.org>
-Uploaders: Mathieu Trudel-Lapierre <mathieu-tl@ubuntu.com>,
-           Shawn Landden <shawn@churchofgit.com>,
-           Alf Gaida <agaida@siduction.org>
+Uploaders: Alf Gaida <agaida@siduction.org>
 Section: net
 Priority: optional
-Build-Depends: debhelper (>= 10),
+Build-Depends: debhelper (>= 11),
                libudev-dev,
                libglib2.0-dev,
                libdbus-1-dev,
@@ -15,9 +13,8 @@ Build-Depends: debhelper (>= 10),
                libxtables-dev,
                wpasupplicant,
                libbluetooth-dev,
-               ppp-dev,
-               dh-systemd
-Standards-Version: 4.0.0
+               ppp-dev
+Standards-Version: 4.1.3
 Vcs-Browser: https://anonscm.debian.org/cgit/collab-maint/connman.git
 Vcs-Git: https://anonscm.debian.org/git/collab-maint/connman.git
 Homepage: https://01.org/connman

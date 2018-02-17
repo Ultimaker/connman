@@ -4,9 +4,19 @@ connman (1.35-3) unstable; urgency=medium
   * Use dh_ppp to generate Breaks for ppp (Closes: #890207)
 
   [ Alf Gaida ]
-  * 
+  * Removed uploaders Mathieu and Shawn (no activity, no valid mail address).
+    Thank you for your contributions. (Closes: #884620)
+  * Bump compat to 11
+  * Bump debhelper to 11
+  * Bump Standards to 4.1.3, no changes needed
+  * Bumped copyright year
+  * Fixed rules, removed --with systemd
+  * Removed build dependency dh-systemd
+  * Use secure uri in watch
+  * Fixed some typos in manpages
+  * Removed lintian overrides for typos
 
- -- Chris Boot <bootc@debian.org>  Sun, 11 Feb 2018 21:14:47 +0000
+ -- Alf Gaida <agaida@siduction.org>  Sat, 17 Feb 2018 15:22:45 +0100
 
 connman (1.35-2) unstable; urgency=medium
 
@@ -26,7 +36,7 @@ connman (1.35-1) unstable; urgency=medium
 connman (1.34-1) unstable; urgency=medium
 
   * Imported upstream-version 1.34
-  * Removed obsolete fix-failure-kernel-4.5.patch 
+  * Removed obsolete fix-failure-kernel-4.5.patch
   * Removed obsolete deb822610-add-manpage-option.patch, applied upstream
   * Removed obsolete dhcp-follow-rfc.patch, applied upstream
   * Bumped Standards to 4.0.0
@@ -43,7 +53,7 @@ connman (1.33-3) unstable; urgency=high
 
   * Fix connman.postrm (Closes: #849345)
     - don't remove state-dir unless when purge
-    - make removing the resolv.conf symlink more sophisticated 
+    - make removing the resolv.conf symlink more sophisticated
   * Suggests: connman-vpn
 
  -- Alf Gaida <agaida@siduction.org>  Mon, 26 Dec 2016 02:12:30 +0100
@@ -51,7 +61,7 @@ connman (1.33-3) unstable; urgency=high
 connman (1.33-2) unstable; urgency=medium
 
   [ Alf Gaida ]
-  * Restrict Architecture to linux-any, connman will never work on non 
+  * Restrict Architecture to linux-any, connman will never work on non
     linux systems - unless systemd will be ported for them
   * debian/README.debian is always removed (Closes: #833297)
   * Make connman postinst and postrm more complete

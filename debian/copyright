@@ -9,9 +9,9 @@ License: GPL-2
 
 Files: debian/*
 Copyright: 2009-2016 Alexander Sack <asac@debian.org>
-           2016-2017 Alf Gaida <agaida@siduction.org>
+           2016-2018 Alf Gaida <agaida@siduction.org>
            2016      Mateusz Łukasik <mati75@linuxmint.pl>
-           2010-2013 Mathieu Trudel <mathieu-tl@ubuntu.com>                
+           2010-2013 Mathieu Trudel <mathieu-tl@ubuntu.com>
 License: GPL-2+
 
 Files: gweb/gionotls.c
@@ -32,7 +32,7 @@ Files: scripts/libppp-plugin.c
 Copyright: 2012 Intel Corporation. All rights reserved
 License: GPL-2
 
-Files: src/6to4.c 
+Files: src/6to4.c
 Copyright: Alexey Kuznetsov et al. from iproute2 package / 2011 Nokia Corporation. All rights reserved
 License: GPL-2
 
