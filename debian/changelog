@@ -1,3 +1,10 @@
+connman (1.35-4) unstable; urgency=medium
+
+  * The provided patch was not enough - added a minimum version for
+    ppp-dev >= 2.4.7-2+
+
+ -- Alf Gaida <agaida@siduction.org>  Mon, 19 Feb 2018 18:47:06 +0100
+
 connman (1.35-3) unstable; urgency=medium
 
   [ Chris Boot ]
