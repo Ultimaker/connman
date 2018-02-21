@@ -104,6 +104,11 @@ Allow connman to change the system hostname. This can
 happen for example if we receive DHCP hostname option.
 Default value is true.
 .TP
+.BI AllowDomainnameUpdates=true\ \fR|\fB\ false
+Allow connman to change the system domainname. This can
+happen for example if we receive DHCP domainname option.
+Default value is true.
+.TP
 .BI SingleConnectedTechnology=true\ \fR|\fB\ false
 Keep only a single connected technology at any time. When a new
 service is connected by the user or a better one is found according
@@ -163,6 +168,7 @@ ethernet tethering.
 .nf
 [General]
 AllowHostnameUpdates = false
+AllowDomainnameUpdates = false
 TetheringTechnologies = ethernet,wifi,bluetooth,gadget
 .fi
 .SH "SEE ALSO"
