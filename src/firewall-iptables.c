@@ -391,14 +391,12 @@ int __connman_firewall_enable_nat(struct firewall_context *ctx,
 				char *address, unsigned char prefixlen,
 				char *interface)
 {
-	char *cmd;
 	int err;
 
-	cmd = g_strdup_printf("-s %s/%d -o %s -j MASQUERADE",
-					address, prefixlen, interface);
+	firewall_add_rule(ctx, "nat", "POSTROUTING",
+				"-s %s/%d -o %s -j MASQUERADE",
+				address, prefixlen, interface);
 
-	firewall_add_rule(ctx, "nat", "POSTROUTING", cmd);
-	g_free(cmd);
 	err = firewall_enable_rules(ctx);
 	if (err)
 		firewall_remove_rules(ctx);
