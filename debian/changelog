@@ -1,3 +1,9 @@
+connman (1.35-6) unstable; urgency=medium
+
+  * Override lintian warning about unusual wandtedby target 
+
+ -- Alf Gaida <agaida@siduction.org>  Fri, 23 Feb 2018 00:34:47 +0100
+
 connman (1.35-5) unstable; urgency=medium
 
   * Fix include order in tethering.c - backported from upstream. 
