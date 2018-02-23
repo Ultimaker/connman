@@ -230,8 +230,7 @@ static void send_packet(struct ntp_data *nd, struct sockaddr *server,
 	 * trying another server.
 	 */
 
-	nd->timeout_id = g_timeout_add_seconds(timeout, send_timeout,
-					GUINT_TO_POINTER(timeout));
+	nd->timeout_id = g_timeout_add_seconds(timeout, send_timeout, nd);
 }
 
 static gboolean next_poll(gpointer user_data)
