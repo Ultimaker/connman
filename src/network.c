@@ -1468,9 +1468,9 @@ int __connman_network_connect(struct connman_network *network)
 	if (!network->device)
 		return -ENODEV;
 
-	network->connecting = true;
-
 	__connman_device_disconnect(network->device);
+
+	network->connecting = true;
 
 	err = network->driver->connect(network);
 	if (err < 0) {
