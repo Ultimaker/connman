@@ -1218,10 +1218,8 @@ static int try_provision_service(struct connman_config_service *config,
 
 		ssid = connman_network_get_blob(network, "WiFi.SSID",
 						&ssid_len);
-		if (!ssid) {
-			connman_error("Network SSID not set");
-			return -EINVAL;
-		}
+		if (!ssid)
+			return -ENOENT;
 
 		if (!config->ssid || ssid_len != config->ssid_len)
 			return -ENOENT;
