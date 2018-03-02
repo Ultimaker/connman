@@ -706,7 +706,8 @@ static gboolean remove_unavailable_network(gpointer key, gpointer value,
 {
 	struct connman_network *network = value;
 
-	if (connman_network_get_connected(network))
+	if (connman_network_get_connected(network) ||
+			connman_network_get_connecting(network))
 		return FALSE;
 
 	if (connman_network_get_available(network))
