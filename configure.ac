@@ -380,6 +380,11 @@ AC_ARG_ENABLE(tools, AC_HELP_STRING([--disable-tools],
 					[enable_tools=${enableval}])
 AM_CONDITIONAL(TOOLS, test "${enable_tools}" != "no")
 
+AC_ARG_ENABLE(stats, AC_HELP_STRING([--disable-stats],
+				[disable statistics round robin file generation]),
+					[enable_stats=${enableval}])
+AM_CONDITIONAL(STATS, test "${enable_stats}" != "no")
+
 if (test "${enable_tools}" != "no"); then
 	AC_PATH_PROGS(IPTABLES_SAVE, [iptables-save], [],
 						$PATH:/sbin:/usr/sbin)
