@@ -3564,8 +3564,7 @@ static DBusMessage *set_property(DBusConnection *conn,
 			char **timeservers = g_strsplit_set(str->str, " ", 0);
 			timeservers = remove_empty_strings(timeservers);
 			service->timeservers_config = timeservers;
-		} else
-			service->timeservers = NULL;
+		}
 
 		g_string_free(str, TRUE);
 
