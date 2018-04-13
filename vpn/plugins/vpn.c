@@ -133,6 +133,10 @@ void vpn_died(struct connman_task *task, int exit_code, void *user_data)
 	if (!data)
 		goto vpn_exit;
 
+	/* The task may die after we have already started the new one */
+	if (data->task != task)
+		goto done;
+
 	state = data->state;
 
 	stop_vpn(provider);
@@ -172,6 +176,7 @@ vpn_exit:
 		g_free(data);
 	}
 
+done:
 	connman_task_destroy(task);
 }
 
