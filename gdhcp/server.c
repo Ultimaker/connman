@@ -396,7 +396,7 @@ GDHCPServer *g_dhcp_server_new(GDHCPType type,
 	dhcp_server->ref_count = 1;
 	dhcp_server->ifindex = ifindex;
 	dhcp_server->listener_sockfd = -1;
-	dhcp_server->listener_watch = -1;
+	dhcp_server->listener_watch = 0;
 	dhcp_server->listener_channel = NULL;
 	dhcp_server->save_lease_func = NULL;
 	dhcp_server->debug_func = NULL;
