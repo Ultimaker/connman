@@ -2234,10 +2234,9 @@ static void disconnect_callback(int result, GSupplicantInterface *interface,
 		return;
 	}
 
-	if (wifi->network) {
+	if (wifi->network != wifi->pending_network)
 		connman_network_set_connected(wifi->network, false);
-		wifi->network = NULL;
-	}
+	wifi->network = NULL;
 
 	wifi->disconnecting = false;
 	wifi->connected = false;
@@ -2560,8 +2559,11 @@ static void interface_state(GSupplicantInterface *interface)
 		default:
 			break;
 		}
-		connman_network_set_connected(network, false);
-		connman_network_set_associating(network, false);
+
+		if (network != wifi->pending_network) {
+			connman_network_set_connected(network, false);
+			connman_network_set_associating(network, false);
+		}
 		wifi->disconnecting = false;
 
 		start_autoscan(device);
