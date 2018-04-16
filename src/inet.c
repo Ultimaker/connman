@@ -3034,10 +3034,8 @@ static int get_nfs_server_ip(const char *cmdline_file, const char *pnp_file,
 						  pnp_file, error->message);
 			goto out;
 		}
-	} else {
-		connman_error("%s: File %s doesn't exist\n", __func__, pnp_file);
+	} else
 		goto out;
-	}
 
 	len = strlen(cmdline);
 	if (len <= 1) {
