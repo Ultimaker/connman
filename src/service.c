@@ -127,7 +127,8 @@ struct connman_service {
 	char *pac;
 	bool wps;
 	bool wps_advertizing;
-	int online_check_count;
+	int online_check_count_ipv4;
+	int online_check_count_ipv6;
 	bool do_split_routing;
 	bool new_service;
 	bool hidden_service;
@@ -3414,6 +3415,19 @@ int __connman_service_reset_ipconfig(struct connman_service *service,
 	return err;
 }
 
+void __connman_service_wispr_start(struct connman_service *service,
+					enum connman_ipconfig_type type)
+{
+	DBG("service %p type %s", service, __connman_ipconfig_type2string(type));
+
+	if (type == CONNMAN_IPCONFIG_TYPE_IPV4)
+		service->online_check_count_ipv4 = 1;
+	else
+		service->online_check_count_ipv6 = 1;
+
+	__connman_wispr_start(service, type);
+}
+
 static DBusMessage *set_property(DBusConnection *conn,
 					DBusMessage *msg, void *user_data)
 {
@@ -3531,13 +3545,11 @@ static DBusMessage *set_property(DBusConnection *conn,
 
 		if (__connman_service_is_connected_state(service,
 						CONNMAN_IPCONFIG_TYPE_IPV4))
-			__connman_wispr_start(service,
-						CONNMAN_IPCONFIG_TYPE_IPV4);
+			__connman_service_wispr_start(service, CONNMAN_IPCONFIG_TYPE_IPV4);
 
 		if (__connman_service_is_connected_state(service,
 						CONNMAN_IPCONFIG_TYPE_IPV6))
-			__connman_wispr_start(service,
-						CONNMAN_IPCONFIG_TYPE_IPV6);
+			__connman_service_wispr_start(service, CONNMAN_IPCONFIG_TYPE_IPV6);
 
 		service_save(service);
 	} else if (g_str_equal(name, "Timeservers.Configuration")) {
@@ -5931,7 +5943,7 @@ static void check_proxy_setup(struct connman_service *service)
 	return;
 
 done:
-	__connman_wispr_start(service, CONNMAN_IPCONFIG_TYPE_IPV4);
+	__connman_service_wispr_start(service, CONNMAN_IPCONFIG_TYPE_IPV4);
 }
 
 /*
@@ -5987,18 +5999,38 @@ static void service_rp_filter(struct connman_service *service,
 		connected_networks_count, original_rp_filter);
 }
 
-static gboolean redo_wispr(gpointer user_data)
+static void redo_wispr(struct connman_service *service,
+					enum connman_ipconfig_type type)
 {
-	struct connman_service *service = user_data;
 	int refcount = service->refcount - 1;
 
 	connman_service_unref(service);
 	if (refcount == 0) {
 		DBG("Service %p already removed", service);
-		return FALSE;
+		return;
 	}
 
-	__connman_wispr_start(service, CONNMAN_IPCONFIG_TYPE_IPV6);
+	DBG("Retrying %s WISPr for %p %s",
+		__connman_ipconfig_type2string(type),
+		service, service->name);
+
+	__connman_wispr_start(service, type);
+}
+
+static gboolean redo_wispr_ipv4(gpointer user_data)
+{
+	struct connman_service *service = user_data;
+
+	redo_wispr(service, CONNMAN_IPCONFIG_TYPE_IPV4);
+
+	return FALSE;
+}
+
+static gboolean redo_wispr_ipv6(gpointer user_data)
+{
+	struct connman_service *service = user_data;
+
+	redo_wispr(service, CONNMAN_IPCONFIG_TYPE_IPV6);
 
 	return FALSE;
 }
@@ -6006,25 +6038,35 @@ static gboolean redo_wispr(gpointer user_data)
 int __connman_service_online_check_failed(struct connman_service *service,
 					enum connman_ipconfig_type type)
 {
-	DBG("service %p type %d count %d", service, type,
-						service->online_check_count);
+	GSourceFunc redo_func;
+	int *count;
 
-	/* currently we only retry IPv6 stuff */
-	if (type == CONNMAN_IPCONFIG_TYPE_IPV4 ||
-			service->online_check_count != 1) {
-		connman_warn("Online check failed for %p %s", service,
-			service->name);
+	if (type == CONNMAN_IPCONFIG_TYPE_IPV4) {
+		count = &service->online_check_count_ipv4;
+		redo_func = redo_wispr_ipv4;
+	} else {
+		count = &service->online_check_count_ipv6;
+		redo_func = redo_wispr_ipv6;
+	}
+
+	DBG("service %p type %s count %d", service,
+		__connman_ipconfig_type2string(type), *count);
+
+	if (*count == 0) {
+		connman_warn("%s online check failed for %p %s",
+			__connman_ipconfig_type2string(type),
+			service, service->name);
 		return 0;
 	}
 
-	service->online_check_count = 0;
+	*count -= 1;
 
 	/*
 	 * We set the timeout to 1 sec so that we have a chance to get
 	 * necessary IPv6 router advertisement messages that might have
 	 * DNS data etc.
 	 */
-	g_timeout_add_seconds(1, redo_wispr, connman_service_ref(service));
+	g_timeout_add_seconds(1, redo_func, connman_service_ref(service));
 
 	return EAGAIN;
 }
@@ -6102,8 +6144,7 @@ int __connman_service_ipconfig_indicate_state(struct connman_service *service,
 			if (type == CONNMAN_IPCONFIG_TYPE_IPV4) {
 				check_proxy_setup(service);
 			} else {
-				service->online_check_count = 1;
-				__connman_wispr_start(service, type);
+				__connman_service_wispr_start(service, type);
 			}
 		else
 			connman_info("Online check disabled. "
