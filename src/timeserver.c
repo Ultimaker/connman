@@ -426,8 +426,6 @@ static int timeserver_start(struct connman_service *service)
 		return -EINVAL;
 
 	nameservers = connman_service_get_nameservers(service);
-	if (!nameservers)
-		return -EINVAL;
 
 	/* Stop an already ongoing resolution, if there is one */
 	if (resolv && resolv_id > 0)
@@ -448,10 +446,12 @@ static int timeserver_start(struct connman_service *service)
 	if (getenv("CONNMAN_RESOLV_DEBUG"))
 		g_resolv_set_debug(resolv, resolv_debug, "RESOLV");
 
-	for (i = 0; nameservers[i]; i++)
-		g_resolv_add_nameserver(resolv, nameservers[i], 53, 0);
+	if (nameservers) {
+		for (i = 0; nameservers[i]; i++)
+			g_resolv_add_nameserver(resolv, nameservers[i], 53, 0);
 
-	g_strfreev(nameservers);
+		g_strfreev(nameservers);
+	}
 
 	return __connman_timeserver_sync(service);
 }
