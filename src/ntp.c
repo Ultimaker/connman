@@ -195,6 +195,7 @@ static void send_packet(struct ntp_data *nd, struct sockaddr *server,
 		addr = (void *)&nd->timeserver_addr.sin6_addr;
 	} else {
 		connman_error("Family is neither ipv4 nor ipv6");
+		nd->cb(false, nd->user_data);
 		return;
 	}
 
@@ -221,6 +222,7 @@ static void send_packet(struct ntp_data *nd, struct sockaddr *server,
 	if (len != sizeof(msg)) {
 		connman_error("Broken time request for server %s",
 			inet_ntop(server->sa_family, addr, ipaddrstring, sizeof(ipaddrstring)));
+		nd->cb(false, nd->user_data);
 		return;
 	}
 
@@ -531,36 +533,31 @@ static void start_ntp(struct ntp_data *nd)
 	nd->transmit_fd = socket(family, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 
 	if (nd->transmit_fd <= 0) {
-                connman_error("Failed to open time server socket");
-                return;
+		if (errno != EAFNOSUPPORT)
+			connman_error("Failed to open time server socket");
 	}
 
 	if (bind(nd->transmit_fd, (struct sockaddr *) addr, size) < 0) {
 		connman_error("Failed to bind time server socket");
-		close(nd->transmit_fd);
-		return;
+		goto err;
 	}
 
 	if (family == AF_INET) {
 		if (setsockopt(nd->transmit_fd, IPPROTO_IP, IP_TOS, &tos, sizeof(tos)) < 0) {
 			connman_error("Failed to set type of service option");
-			close(nd->transmit_fd);
-			return;
+			goto err;
 		}
 	}
 
 	if (setsockopt(nd->transmit_fd, SOL_SOCKET, SO_TIMESTAMP, &timestamp,
 						sizeof(timestamp)) < 0) {
 		connman_error("Failed to enable timestamp support");
-		close(nd->transmit_fd);
-		return;
+		goto err;
 	}
 
 	channel = g_io_channel_unix_new(nd->transmit_fd);
-	if (!channel) {
-		close(nd->transmit_fd);
-		return;
-	}
+	if (!channel)
+		goto err;
 
 	g_io_channel_set_encoding(channel, NULL, NULL);
 	g_io_channel_set_buffered(channel, FALSE);
@@ -576,6 +573,14 @@ static void start_ntp(struct ntp_data *nd)
 send:
 	send_packet(nd, (struct sockaddr*)&ntp_data->timeserver_addr,
 		NTP_SEND_TIMEOUT);
+	return;
+
+err:
+	if (nd->transmit_fd > 0)
+		close(nd->transmit_fd);
+
+	nd->cb(false, nd->user_data);
+	return;
 }
 
 int __connman_ntp_start(char *server, __connman_ntp_cb_t callback,
