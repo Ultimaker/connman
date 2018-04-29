@@ -1,12 +1,23 @@
+connman (1.35-7) unstable; urgency=medium
+
+  * Remove directory main.conf if it exists.
+    Addition to (LP: 1724574)
+  * Enabled iwd support and added it to recommends (Closes: #896686)
+  * Bumped Standards to 4.1.4, no changes needed
+  * Changed VCS fields to salsa
+  * Removed trailing whitespaces
+
+ -- Alf Gaida <agaida@siduction.org>  Sun, 29 Apr 2018 02:02:28 +0200
+
 connman (1.35-6) unstable; urgency=medium
 
-  * Override lintian warning about unusual wandtedby target 
+  * Override lintian warning about unusual wandtedby target
 
  -- Alf Gaida <agaida@siduction.org>  Fri, 23 Feb 2018 00:34:47 +0100
 
 connman (1.35-5) unstable; urgency=medium
 
-  * Fix include order in tethering.c - backported from upstream. 
+  * Fix include order in tethering.c - backported from upstream.
 
  -- Alf Gaida <agaida@siduction.org>  Tue, 20 Feb 2018 19:26:59 +0100
 
