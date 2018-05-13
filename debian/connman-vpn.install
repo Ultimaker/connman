@@ -1,4 +1,5 @@
-etc/dbus-1/system.d/connman-vpn-dbus.conf
+usr/share/dbus-1/system.d/connman-vpn-dbus.conf
+
 lib/systemd/system/connman-vpn.service
 usr/share/polkit-1/actions/net.connman.vpn.policy
 usr/lib/*/connman/scripts/openconnect-script

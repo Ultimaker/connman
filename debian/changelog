@@ -1,3 +1,10 @@
+connman (1.36-1) UNRELEASED; urgency=medium
+
+  * Adding upstream version 1.36
+  * fix-tethering-includes.patch removed, was backported upstream
+
+ -- Alf Gaida <agaida@siduction.org>  Sun, 13 May 2018 14:08:42 +0200
+
 connman (1.35-7) unstable; urgency=medium
 
   * Remove directory main.conf if it exists.

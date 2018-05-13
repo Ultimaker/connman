@@ -4,7 +4,7 @@ Upstream-Contact: Marcel Holtmann <marcel@holtmann.org>
 Source: https://git.kernel.org/cgit/network/connman/connman.git
 
 Files: *
-Copyright: 2007-2017 Intel Corporation. All rights reserved
+Copyright: 2007-2018 Intel Corporation. All rights reserved
 License: GPL-2
 
 Files: debian/*
