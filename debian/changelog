@@ -1,9 +1,11 @@
-connman (1.36-1) UNRELEASED; urgency=medium
+connman (1.36-1) unstable; urgency=medium
 
   * Adding upstream version 1.36
-  * fix-tethering-includes.patch removed, was backported upstream
+  * Removed fix-tethering-includes.patch, was backported from upstream
+  * Fixed some installation pathes
+  * Bumped copyright year
 
- -- Alf Gaida <agaida@siduction.org>  Sun, 13 May 2018 14:08:42 +0200
+ -- Alf Gaida <agaida@siduction.org>  Sun, 13 May 2018 15:45:34 +0200
 
 connman (1.35-7) unstable; urgency=medium
 
