@@ -1,3 +1,10 @@
+connman (1.36-2) unstable; urgency=medium
+
+  * Ported back upstream commit for iwd device state (Closes: #913632)
+  * Bumped Standards to 4.2.1, no changes needed 
+
+ -- Alf Gaida <agaida@siduction.org>  Sat, 29 Dec 2018 14:00:23 +0100
+
 connman (1.36-1) unstable; urgency=medium
 
   * Adding upstream version 1.36
