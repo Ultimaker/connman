@@ -3,6 +3,12 @@
 set -u
 set -e
 
+SRC_DIR="$(pwd)"
+BUILD_DIR="${SRC_DIR}/_build"
+DEB_DIR="${BUILD_DIR}/_install"
+SYSCONFDIR="${SYSCONFDIR:-/etc}"
+MODULES_LOAD_DIR="${SYSCONFDIR}/modules-load.d"
+
 if [ -z ${RELEASE_VERSION+x} ]; then
 	RELEASE_VERSION=9999.99.99
 fi
@@ -68,5 +74,8 @@ else
 fi
 EOT
 chmod +x "_install/DEBIAN/postinst"
+
+mkdir -p "${DEB_DIR}/${MODULES_LOAD_DIR}"
+cp "${SRC_DIR}/config/modules-load.d/connman.conf" "${DEB_DIR}/${MODULES_LOAD_DIR}/"
 
 fakeroot dpkg-deb --build "_install" ../connman-${RELEASE_VERSION}_armhf.deb
