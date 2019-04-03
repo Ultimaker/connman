@@ -12,7 +12,7 @@ Description: Intel Connection Manager daemon
  can be extended through plug-ins. The plug-in approach allows for
  easy adaption and modification for various use cases.
  .
- ConnMan provies IPv4 and IPv6 connectivity via:
+ ConnMan provides IPv4 and IPv6 connectivity via:
   * ethernet
   * WiFi, using wpasupplicant
   * Cellular, using oFono
