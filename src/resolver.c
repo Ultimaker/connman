@@ -100,9 +100,9 @@ static int resolvfile_export(void)
 	 * MAXDNSRCH/MAXNS entries are used.
 	 */
 
-	for (count = 0, list = g_list_last(resolvfile_list);
+	for (count = 0, list = g_list_first(resolvfile_list);
 						list && (count < MAXDNSRCH);
-						list = g_list_previous(list)) {
+						list = g_list_next(list)) {
 		struct resolvfile_entry *entry = list->data;
 
 		if (!entry->domain)
@@ -118,9 +118,9 @@ static int resolvfile_export(void)
 	if (count)
 		g_string_append_printf(content, "\n");
 
-	for (count = 0, list = g_list_last(resolvfile_list);
+	for (count = 0, list = g_list_first(resolvfile_list);
 						list && (count < MAXNS);
-						list = g_list_previous(list)) {
+						list = g_list_next(list)) {
 		struct resolvfile_entry *entry = list->data;
 
 		if (!entry->server)
@@ -413,16 +413,6 @@ static int append_resolver(int index, const char *domain,
 							server, true);
 	}
 
-	if (entry->index >= 0 && entry->server)
-		remove_fallback_nameservers();
-
-	entry_list = g_slist_append(entry_list, entry);
-
-	if (dnsproxy_enabled)
-		__connman_dnsproxy_append(entry->index, domain, server);
-	else
-		__connman_resolvfile_append(entry->index, domain, server);
-
 	return 0;
 }
 
@@ -662,18 +652,33 @@ static void free_resolvfile(gpointer data)
 	g_free(entry);
 }
 
-int __connman_resolver_init(gboolean dnsproxy, gboolean captiveproxy)
+int __connman_resolver_set_mdns(int index, bool enabled)
+{
+	if (!dnsproxy_enabled)
+		return -ENOTSUP;
+
+	return __connman_dnsproxy_set_mdns(index, enabled);
+}
+
+int __connman_resolver_init(gboolean dnsproxy)
 {
 	int i;
 	char **ns;
 
-	DBG("dnsproxy %d, captiveproxy %d",
-		dnsproxy, captiveproxy);
+	DBG("dnsproxy %d", dnsproxy);
+
+	/* get autoip nameservers */
+	ns = __connman_inet_get_pnp_nameservers(NULL);
+	for (i = 0; ns && ns[i]; i += 1) {
+		DBG("pnp server %s", ns[i]);
+		append_resolver(i, NULL, ns[i], 86400, 0);
+	}
+	g_strfreev(ns);
 
 	if (!dnsproxy)
 		return 0;
 
-	if (__connman_dnsproxy_init(captiveproxy) < 0) {
+	if (__connman_dnsproxy_init() < 0) {
 		/* Fall back to resolv.conf */
 		return 0;
 	}

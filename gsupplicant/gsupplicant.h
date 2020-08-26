@@ -144,6 +144,10 @@ struct _GSupplicantSSID {
 	const char *identity;
 	const char *anonymous_identity;
 	const char *ca_cert_path;
+	const char *subject_match;
+	const char *altsubject_match;
+	const char *domain_suffix_match;
+	const char *domain_match;
 	const char *client_cert_path;
 	const char *private_key_path;
 	const char *private_key_passphrase;
@@ -347,6 +351,7 @@ struct _GSupplicantCallbacks {
 	void (*network_removed) (GSupplicantNetwork *network);
 	void (*network_changed) (GSupplicantNetwork *network,
 					const char *property);
+	void (*network_associated) (GSupplicantNetwork *network);
 	void (*peer_found) (GSupplicantPeer *peer);
 	void (*peer_lost) (GSupplicantPeer *peer);
 	void (*peer_changed) (GSupplicantPeer *peer,

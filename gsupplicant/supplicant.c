@@ -143,6 +143,7 @@ static GHashTable *bss_mapping;
 static GHashTable *peer_mapping;
 static GHashTable *group_mapping;
 static GHashTable *pending_peer_connection;
+static GHashTable *config_file_table;
 
 struct _GSupplicantWpsCredentials {
 	unsigned char ssid[32];
@@ -188,6 +189,7 @@ struct _GSupplicantInterface {
 	GHashTable *bss_mapping;
 	void *data;
 	const char *pending_peer_path;
+	GSupplicantNetwork *current_network;
 	struct added_network_information network_info;
 };
 
@@ -601,6 +603,17 @@ static void callback_network_changed(GSupplicantNetwork *network,
 	callbacks_pointer->network_changed(network, property);
 }
 
+static void callback_network_associated(GSupplicantNetwork *network)
+{
+	if (!callbacks_pointer)
+		return;
+
+	if (!callbacks_pointer->network_associated)
+		return;
+
+	callbacks_pointer->network_associated(network);
+}
+
 static void callback_peer_found(GSupplicantPeer *peer)
 {
 	if (!callbacks_pointer)
@@ -742,6 +755,8 @@ static void remove_bss(gpointer data)
 {
 	struct g_supplicant_bss *bss = data;
 
+	supplicant_dbus_property_call_cancel_all(bss);
+
 	g_free(bss->path);
 	g_free(bss);
 }
@@ -764,6 +779,7 @@ static void remove_peer(gpointer data)
 	g_free(peer->path);
 	g_free(peer->name);
 	g_free(peer->identifier);
+	g_free(peer->widi_ies);
 
 	g_free(peer);
 }
@@ -1561,6 +1577,7 @@ static int add_or_replace_bss_to_network(struct g_supplicant_bss *bss)
 	GSupplicantInterface *interface = bss->interface;
 	GSupplicantNetwork *network;
 	char *group;
+	bool is_new_network;
 
 	group = create_group(bss);
 	SUPPLICANT_DBG("New group created: %s", group);
@@ -1572,9 +1589,12 @@ static int add_or_replace_bss_to_network(struct g_supplicant_bss *bss)
 	if (network) {
 		g_free(group);
 		SUPPLICANT_DBG("Network %s already exist", network->name);
+		is_new_network = false;
 
 		goto done;
 	}
+
+	is_new_network = true;
 
 	network = g_try_new0(GSupplicantNetwork, 1);
 	if (!network) {
@@ -1595,6 +1615,11 @@ static int add_or_replace_bss_to_network(struct g_supplicant_bss *bss)
 	network->frequency = bss->frequency;
 	network->best_bss = bss;
 
+	if ((bss->keymgmt & G_SUPPLICANT_KEYMGMT_WPS) != 0) {
+		network->wps = TRUE;
+		network->wps_capabilities = bss->wps_capabilities;
+	}
+
 	SUPPLICANT_DBG("New network %s created", network->name);
 
 	network->bss_table = g_hash_table_new_full(g_str_hash, g_str_equal,
@@ -1612,10 +1637,18 @@ done:
 	/* We update network's WPS properties if only bss provides WPS. */
 	if ((bss->keymgmt & G_SUPPLICANT_KEYMGMT_WPS) != 0) {
 		network->wps = TRUE;
-		network->wps_capabilities |= bss->wps_capabilities;
+		network->wps_capabilities = bss->wps_capabilities;
+
+		if (!is_new_network)
+			callback_network_changed(network, "WPSCapabilities");
 	}
 
-	if (bss->signal > network->signal) {
+	/*
+	 * Do not change best BSS if we are connected. It will be done through
+	 * CurrentBSS property in case of misalignment with wpa_s or roaming.
+	 */
+	if (network != interface->current_network &&
+				bss->signal > network->signal) {
 		network->signal = bss->signal;
 		network->best_bss = bss;
 		callback_network_changed(network, "Signal");
@@ -2045,7 +2078,7 @@ static void interface_bss_added_without_keys(DBusMessageIter *iter,
 
 	supplicant_dbus_property_get_all(bss->path,
 					SUPPLICANT_INTERFACE ".BSS",
-					bss_property, bss, NULL);
+					bss_property, bss, bss);
 
 	bss_compute_security(bss);
 	if (add_or_replace_bss_to_network(bss) < 0)
@@ -2073,6 +2106,75 @@ static void update_network_signal(GSupplicantNetwork *network)
 				update_signal, network);
 
 	SUPPLICANT_DBG("New network signal %d", network->signal);
+}
+
+static void interface_current_bss(GSupplicantInterface *interface,
+						DBusMessageIter *iter)
+{
+	GSupplicantNetwork *network;
+	struct g_supplicant_bss *bss;
+	const char *path;
+
+	dbus_message_iter_get_basic(iter, &path);
+	if (g_strcmp0(path, "/") == 0) {
+		interface->current_network = NULL;
+		return;
+	}
+
+	interface_bss_added_without_keys(iter, interface);
+
+	network = g_hash_table_lookup(interface->bss_mapping, path);
+	if (!network)
+		return;
+
+	bss = g_hash_table_lookup(network->bss_table, path);
+	if (!bss)
+		return;
+
+	interface->current_network = network;
+
+	if (bss != network->best_bss) {
+		/*
+		 * This is the case where either wpa_s got associated
+		 * to a BSS different than the one ConnMan considers
+		 * the best, or we are roaming.
+		 */
+		SUPPLICANT_DBG("Update best BSS for %s", network->name);
+
+		network->best_bss = bss;
+
+		if (network->signal != bss->signal) {
+			SUPPLICANT_DBG("New network signal %d dBm",
+						bss->signal);
+
+			network->signal = bss->signal;
+			callback_network_changed(network, "Signal");
+		}
+	}
+
+	/*
+	 * wpa_s could notify about CurrentBSS in any state once
+	 * it got associated. It is not sure such notification will
+	 * arrive together with transition to ASSOCIATED state.
+	 * In fact, for networks with security WEP or OPEN, it
+	 * always arrives together with transition to COMPLETED.
+	 */
+	switch (interface->state) {
+	case G_SUPPLICANT_STATE_UNKNOWN:
+	case G_SUPPLICANT_STATE_DISABLED:
+	case G_SUPPLICANT_STATE_DISCONNECTED:
+	case G_SUPPLICANT_STATE_INACTIVE:
+	case G_SUPPLICANT_STATE_SCANNING:
+	case G_SUPPLICANT_STATE_AUTHENTICATING:
+	case G_SUPPLICANT_STATE_ASSOCIATING:
+		return;
+	case G_SUPPLICANT_STATE_ASSOCIATED:
+	case G_SUPPLICANT_STATE_4WAY_HANDSHAKE:
+	case G_SUPPLICANT_STATE_GROUP_HANDSHAKE:
+	case G_SUPPLICANT_STATE_COMPLETED:
+		callback_network_associated(network);
+		break;
+	}
 }
 
 static void interface_bss_removed(DBusMessageIter *iter, void *user_data)
@@ -2109,10 +2211,37 @@ static void interface_bss_removed(DBusMessageIter *iter, void *user_data)
 
 static void set_config_methods(DBusMessageIter *iter, void *user_data)
 {
-	const char *config_methods = "push_button";
+	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING, user_data);
+}
 
-	dbus_message_iter_append_basic(iter, DBUS_TYPE_STRING,
-							&config_methods);
+static void wps_property(const char *key, DBusMessageIter *iter,
+							void *user_data)
+{
+	GSupplicantInterface *interface = user_data;
+
+	if (!interface)
+		return;
+
+	SUPPLICANT_DBG("key: %s", key);
+
+	if (g_strcmp0(key, "ConfigMethods") == 0) {
+		const char *config_methods = "push_button", *str = NULL;
+
+		dbus_message_iter_get_basic(iter, &str);
+		if (str && strlen(str) > 0) {
+			/* It was already set at wpa_s level, don't modify it. */
+			SUPPLICANT_DBG("%s", str);
+			return;
+		}
+
+		supplicant_dbus_property_set(interface->path,
+			SUPPLICANT_INTERFACE ".Interface.WPS",
+			"ConfigMethods", DBUS_TYPE_STRING_AS_STRING,
+			set_config_methods, NULL, &config_methods, NULL);
+
+		SUPPLICANT_DBG("No value. Set %s", config_methods);
+	}
+
 }
 
 static void interface_property(const char *key, DBusMessageIter *iter,
@@ -2141,11 +2270,9 @@ static void interface_property(const char *key, DBusMessageIter *iter,
 		debug_strvalmap("Mode capability", mode_capa_map,
 						interface->mode_capa);
 
-
-		supplicant_dbus_property_set(interface->path,
+		supplicant_dbus_property_get_all(interface->path,
 				SUPPLICANT_INTERFACE ".Interface.WPS",
-				"ConfigMethods", DBUS_TYPE_STRING_AS_STRING,
-				set_config_methods, NULL, NULL, NULL);
+				wps_property, interface, interface);
 
 		if (interface->ready)
 			callback_interface_added(interface);
@@ -2222,8 +2349,17 @@ static void interface_property(const char *key, DBusMessageIter *iter,
 			g_free(interface->bridge);
 			interface->bridge = g_strdup(str);
 		}
+	} else if (g_strcmp0(key, "ConfigFile") == 0) {
+		const char *str = NULL;
+
+		dbus_message_iter_get_basic(iter, &str);
+		if (str && strlen(str) > 0 && interface->ifname) {
+			SUPPLICANT_DBG("New {%s, %s}", interface->ifname, str);
+			g_hash_table_replace(config_file_table,
+				g_strdup(interface->ifname), g_strdup(str));
+		}
 	} else if (g_strcmp0(key, "CurrentBSS") == 0) {
-		interface_bss_added_without_keys(iter, interface);
+		interface_current_bss(interface, iter);
 	} else if (g_strcmp0(key, "CurrentNetwork") == 0) {
 		interface_network_added(iter, interface);
 	} else if (g_strcmp0(key, "BSSs") == 0) {
@@ -2320,6 +2456,7 @@ static void interface_added(DBusMessageIter *iter, void *user_data)
 {
 	GSupplicantInterface *interface;
 	const char *path = NULL;
+	bool properties_appended = GPOINTER_TO_UINT(user_data);
 
 	SUPPLICANT_DBG("");
 
@@ -2338,18 +2475,20 @@ static void interface_added(DBusMessageIter *iter, void *user_data)
 	if (!interface)
 		return;
 
+	if (!properties_appended) {
+		supplicant_dbus_property_get_all(path,
+						SUPPLICANT_INTERFACE ".Interface",
+						interface_property, interface,
+						interface);
+		return;
+	}
+
 	dbus_message_iter_next(iter);
 	if (dbus_message_iter_get_arg_type(iter) != DBUS_TYPE_INVALID) {
 		supplicant_dbus_property_foreach(iter, interface_property,
 								interface);
 		interface_property(NULL, NULL, interface);
-		return;
 	}
-
-	supplicant_dbus_property_get_all(path,
-					SUPPLICANT_INTERFACE ".Interface",
-					interface_property, interface,
-					interface);
 }
 
 static void interface_removed(DBusMessageIter *iter, void *user_data)
@@ -2452,6 +2591,7 @@ static void signal_name_owner_changed(const char *path, DBusMessageIter *iter)
 		g_hash_table_remove_all(bss_mapping);
 		g_hash_table_remove_all(peer_mapping);
 		g_hash_table_remove_all(group_mapping);
+		g_hash_table_remove_all(config_file_table);
 		g_hash_table_remove_all(interface_table);
 		callback_system_killed();
 	}
@@ -2479,7 +2619,7 @@ static void signal_interface_added(const char *path, DBusMessageIter *iter)
 	SUPPLICANT_DBG("path %s %s", path, SUPPLICANT_PATH);
 
 	if (g_strcmp0(path, SUPPLICANT_PATH) == 0)
-		interface_added(iter, NULL);
+		interface_added(iter, GUINT_TO_POINTER(true));
 }
 
 static void signal_interface_removed(const char *path, DBusMessageIter *iter)
@@ -2597,6 +2737,7 @@ static void signal_bss_changed(const char *path, DBusMessageIter *iter)
 	GSupplicantInterface *interface;
 	GSupplicantNetwork *network;
 	GSupplicantSecurity old_security;
+	unsigned int old_wps_capabilities;
 	struct g_supplicant_bss *bss;
 
 	SUPPLICANT_DBG("");
@@ -2621,18 +2762,18 @@ static void signal_bss_changed(const char *path, DBusMessageIter *iter)
 	if (old_security != bss->security) {
 		struct g_supplicant_bss *new_bss;
 
-		SUPPLICANT_DBG("New network security for %s", bss->ssid);
+		SUPPLICANT_DBG("New network security for %s with path %s",
+			       bss->ssid, bss->path);
 
-		/* Security change policy:
-		 * - we first copy the current bss into a new one with
-		 * its own pointer (path)
-		 * - we remove the current bss related network which will
-		 * tell the plugin about such removal. This is done due
-		 * to the fact that a security change means a group change
-		 * so a complete network change.
-		 * (current bss becomes invalid as well)
-		 * - we add the new bss: it adds new network and tell the
-		 * plugin about it. */
+		/*
+		 * Security change policy:
+		 * - We first copy the current bss into a new one with
+		 *   its own pointer (path)
+		 * - Clear the old bss pointer and remove the network completely
+		 *   if there are no more BSSs in the bss table.
+		 * - The new bss will be added either to an existing network
+		 *   or an additional network will be created
+		 */
 
 		new_bss = g_try_new0(struct g_supplicant_bss, 1);
 		if (!new_bss)
@@ -2641,19 +2782,46 @@ static void signal_bss_changed(const char *path, DBusMessageIter *iter)
 		memcpy(new_bss, bss, sizeof(struct g_supplicant_bss));
 		new_bss->path = g_strdup(bss->path);
 
-		g_hash_table_remove(interface->network_table, network->group);
+		if (network->best_bss == bss) {
+			network->best_bss = NULL;
+			network->signal = BSS_UNKNOWN_STRENGTH;
+		}
+
+		g_hash_table_remove(bss_mapping, path);
+
+		g_hash_table_remove(interface->bss_mapping, path);
+		g_hash_table_remove(network->bss_table, path);
+
+		update_network_signal(network);
+
+		if (g_hash_table_size(network->bss_table) == 0)
+			g_hash_table_remove(interface->network_table,
+					    network->group);
 
 		if (add_or_replace_bss_to_network(new_bss) < 0) {
-			/* Remove entries in hash tables to handle the
-			 * failure in add_or_replace_bss_to_network
+			/*
+			 * Prevent a memory leak on failure in
+			 * add_or_replace_bss_to_network
 			 */
-			g_hash_table_remove(bss_mapping, path);
-			g_hash_table_remove(interface->bss_mapping, path);
-			g_hash_table_remove(network->bss_table, path);
+			SUPPLICANT_DBG("Failed to add bss %s to network table",
+				       new_bss->path);
+			g_free(new_bss->path);
+			g_free(new_bss);
 		}
 
 		return;
 	}
+
+	old_wps_capabilities = network->wps_capabilities;
+
+	if (old_wps_capabilities != bss->wps_capabilities) {
+		network->wps_capabilities = bss->wps_capabilities;
+		callback_network_changed(network, "WPSCapabilities");
+	}
+
+	/* Consider only property changes of the connected BSS */
+	if (network == interface->current_network && bss != network->best_bss)
+		return;
 
 	if (bss->signal == network->signal)
 		return;
@@ -3721,6 +3889,7 @@ static void interface_create_params(DBusMessageIter *iter, void *user_data)
 {
 	struct interface_create_data *data = user_data;
 	DBusMessageIter dict;
+	char *config_file = NULL;
 
 	SUPPLICANT_DBG("");
 
@@ -3736,6 +3905,14 @@ static void interface_create_params(DBusMessageIter *iter, void *user_data)
 	if (data->bridge)
 		supplicant_dbus_dict_append_basic(&dict, "BridgeIfname",
 					DBUS_TYPE_STRING, &data->bridge);
+
+	config_file = g_hash_table_lookup(config_file_table, data->ifname);
+	if (config_file) {
+		SUPPLICANT_DBG("[%s] ConfigFile %s", data->ifname, config_file);
+
+		supplicant_dbus_dict_append_basic(&dict, "ConfigFile",
+					DBUS_TYPE_STRING, &config_file);
+	}
 
 	supplicant_dbus_dict_close(iter, &dict);
 }
@@ -3855,6 +4032,7 @@ static void interface_remove_result(const char *error,
 
 	if (error) {
 		err = -EIO;
+		SUPPLICANT_DBG("error: %s", error);
 		goto done;
 	}
 
@@ -4222,7 +4400,6 @@ static void interface_add_network_result(const char *error,
 
 	SUPPLICANT_DBG("PATH: %s", path);
 
-	g_free(interface->network_path);
 	interface->network_path = g_strdup(path);
 
 	store_network_information(interface, data->ssid);
@@ -4509,6 +4686,26 @@ static void add_network_security_eap(DBusMessageIter *dict,
 						     DBUS_TYPE_STRING,
 						     &ssid->anonymous_identity);
 
+	if(ssid->subject_match)
+		supplicant_dbus_dict_append_basic(dict, "subject_match",
+						     DBUS_TYPE_STRING,
+						     &ssid->subject_match);
+
+	if(ssid->altsubject_match)
+		supplicant_dbus_dict_append_basic(dict, "altsubject_match",
+						     DBUS_TYPE_STRING,
+						     &ssid->altsubject_match);
+
+	if(ssid->domain_suffix_match)
+		supplicant_dbus_dict_append_basic(dict, "domain_suffix_match",
+						     DBUS_TYPE_STRING,
+						     &ssid->domain_suffix_match);
+
+	if(ssid->domain_match)
+		supplicant_dbus_dict_append_basic(dict, "domain_match",
+						     DBUS_TYPE_STRING,
+						     &ssid->domain_match);
+
 	g_free(eap_value);
 }
 
@@ -4778,6 +4975,8 @@ int g_supplicant_interface_connect(GSupplicantInterface *interface,
 	struct interface_data *intf_data;
 	int ret = 0;
 
+	SUPPLICANT_DBG("");
+
 	if (!interface)
 		return -EINVAL;
 
@@ -4878,6 +5077,8 @@ static void network_remove_result(const char *error,
 
 	if (error) {
 		result = -EIO;
+		SUPPLICANT_DBG("error: %s", error);
+
 		if (g_strcmp0("org.freedesktop.DBus.Error.UnknownMethod",
 						error) == 0)
 			result = -ECONNABORTED;
@@ -4945,23 +5146,29 @@ static void interface_disconnect_result(const char *error,
 
 	if (error) {
 		result = -EIO;
+		SUPPLICANT_DBG("error: %s", error);
+
 		if (g_strcmp0("org.freedesktop.DBus.Error.UnknownMethod",
 						error) == 0)
 			result = -ECONNABORTED;
-	}
-
-	if (result < 0 && data->callback) {
-		data->callback(result, data->interface, data->user_data);
-		data->callback = NULL;
 	}
 
 	/* If we are disconnecting from previous WPS successful
 	 * association. i.e.: it did not went through AddNetwork,
 	 * and interface->network_path was never set. */
 	if (!data->interface->network_path) {
+		if (data->callback)
+			data->callback(result, data->interface,
+							data->user_data);
+
 		g_free(data->path);
 		dbus_free(data);
 		return;
+	}
+
+	if (result < 0 && data->callback) {
+		data->callback(result, data->interface, data->user_data);
+		data->callback = NULL;
 	}
 
 	if (result != -ECONNABORTED) {
@@ -5110,8 +5317,10 @@ static void interface_p2p_connect_result(const char *error,
 
 	SUPPLICANT_DBG("");
 
-	if (error)
+	if (error) {
+		SUPPLICANT_DBG("error: %s", error);
 		err = parse_supplicant_error(iter);
+	}
 
 	if (data->callback)
 		data->callback(err, data->interface, data->user_data);
@@ -5530,6 +5739,8 @@ int g_supplicant_register(const GSupplicantCallbacks *callbacks)
 								NULL, NULL);
 	pending_peer_connection = g_hash_table_new_full(g_str_hash, g_str_equal,
 								NULL, NULL);
+	config_file_table = g_hash_table_new_full(g_str_hash, g_str_equal,
+								g_free, g_free);
 
 	supplicant_dbus_setup(connection);
 
@@ -5596,6 +5807,11 @@ void g_supplicant_unregister(const GSupplicantCallbacks *callbacks)
 
 		dbus_connection_remove_filter(connection,
 						g_supplicant_filter, NULL);
+	}
+
+	if (config_file_table) {
+		g_hash_table_destroy(config_file_table);
+		config_file_table = NULL;
 	}
 
 	if (bss_mapping) {

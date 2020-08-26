@@ -11,6 +11,7 @@ fi
 		--mandir=/usr/share/man \
 		--localstatedir=/var \
 		--sysconfdir=/etc \
+		--with-firewall=nftables \
 		--disable-datafiles \
 		--enable-openconnect=builtin \
 		--enable-openvpn=builtin \

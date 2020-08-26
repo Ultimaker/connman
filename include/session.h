@@ -22,6 +22,7 @@
 #ifndef __CONNMAN_SESSION_H
 #define __CONNMAN_SESSION_H
 
+#include <stdint.h>
 #include <connman/service.h>
 
 #ifdef __cplusplus
@@ -55,6 +56,12 @@ enum connman_session_id_type {
 	CONNMAN_SESSION_ID_TYPE_LSM	= 3,
 };
 
+enum connman_session_state {
+	CONNMAN_SESSION_STATE_DISCONNECTED   = 0,
+	CONNMAN_SESSION_STATE_CONNECTED      = 1,
+	CONNMAN_SESSION_STATE_ONLINE         = 2,
+};
+
 struct connman_session;
 
 struct connman_session_config {
@@ -65,6 +72,9 @@ struct connman_session_config {
 	enum connman_session_type type;
 	bool ecall;
 	GSList *allowed_bearers;
+	char *allowed_interface;
+	bool source_ip_rule;
+	char *context_identifier;
 };
 
 typedef int (* connman_session_config_func_t) (struct connman_session *session,
@@ -83,8 +93,13 @@ struct connman_session_policy {
 				GSList *bearers);
 	bool (*allowed)(struct connman_session *session,
 			struct connman_service *service);
+	void (*update_session_state)(struct connman_session* session,
+				     enum connman_session_state state);
+	struct connman_service* (*get_service_for_session)(struct connman_session* session,
+							   GSList* services);
 };
 
+uint32_t connman_session_firewall_get_fwmark(struct connman_session *session);
 int connman_session_policy_register(struct connman_session_policy *config);
 void connman_session_policy_unregister(struct connman_session_policy *config);
 

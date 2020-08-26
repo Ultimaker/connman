@@ -17,8 +17,7 @@ must end with \fB.config\fP. Each VPN connection requires a provisioning
 file, but multiple connections can be specified in the same file.
 .SH "FILE FORMAT"
 .P
-The configuration file format is key file format.
-It consists of sections (groups) of key-value pairs.
+The configuration file consists of sections (groups) of key-value pairs.
 Lines beginning with a '#' and blank lines are considered comments.
 Sections are started by a header line containing the section enclosed
 in '[' and ']', and ended implicitly by the start of the next section
@@ -392,41 +391,3 @@ Allow MPPE to use stateful mode.
 .B PPPD.NoVJ=true \fR|\fB false
 No Van Jacobson compression.
 
-.SH "EXAMPLE"
-This is a configuration file for a VPN providing L2TP, OpenVPN and
-OpenConnect services. It could, for example, be in the file
-.B @vpn_storagedir@/example.config\fR.
-.PP
-.nf
-[global]
-Name = Example
-Description = Example VPN configuration
-
-[provider_l2tp]
-Type = L2TP
-Name = Connection to corporate network
-Host = 1.2.3.4
-Domain = corporate.com
-Networks = 10.10.30.0/24
-L2TP.User = username
-
-[provider_openconnect]
-Type = OpenConnect
-Name = Connection to corporate network using Cisco VPN
-Host = 7.6.5.4
-Domain = corporate.com
-Networks = 10.10.20.0/255.255.255.0/10.20.1.5,192.168.99.1/24,2001:db8::1/64
-OpenConnect.ServerCert = 263AFAB4CB2E6621D12E90182008AEF44AEFA031
-OpenConnect.CACert = /etc/certs/certificate.p12
-
-[provider_openvpn]
-Type = OpenVPN
-Name = Connection to corporate network using OpenVPN
-Host = 3.2.5.6
-Domain = my.home.network
-OpenVPN.CACert = /etc/certs/cacert.pem
-OpenVPN.Cert = /etc/certs/cert.pem
-OpenVPN.Key = /etc/certs/cert.key
-.fi
-.SH "SEE ALSO"
-.BR connmanctl (1),\  connman (8),\  connman-vpn (8)

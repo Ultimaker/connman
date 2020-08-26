@@ -41,6 +41,13 @@
  */
 #define RS_REFRESH_TIMEOUT	3
 
+/*
+ * As per RFC 4861, a host should transmit up to MAX_RTR_SOLICITATIONS(3)
+ * Router Solicitation messages, each separated by at least
+ * RTR_SOLICITATION_INTERVAL(4) seconds to obtain RA for IPv6 auto-configuration.
+ */
+#define RTR_SOLICITATION_INTERVAL	4
+
 static GSList *network_list = NULL;
 static GSList *driver_list = NULL;
 
@@ -82,11 +89,16 @@ struct connman_network {
 		char *anonymous_identity;
 		char *agent_identity;
 		char *ca_cert_path;
+		char *subject_match;
+		char *altsubject_match;
+		char *domain_suffix_match;
+		char *domain_match;
 		char *client_cert_path;
 		char *private_key_path;
 		char *private_key_passphrase;
 		char *phase2_auth;
 		bool wps;
+		bool wps_advertizing;
 		bool use_wps;
 		char *pin_wps;
 	} wifi;
@@ -167,6 +179,8 @@ static void dhcp_success(struct connman_network *network)
 	err = __connman_ipconfig_gateway_add(ipconfig_ipv4);
 	if (err < 0)
 		goto err;
+
+	__connman_service_save(service);
 
 	return;
 
@@ -285,9 +299,6 @@ static int manual_ipv6_set(struct connman_network *network,
 	err = __connman_ipconfig_gateway_add(ipconfig_ipv6);
 	if (err < 0)
 		return err;
-
-	__connman_connection_gateway_activate(service,
-						CONNMAN_IPCONFIG_TYPE_IPV6);
 
 	__connman_device_set_network(network->device, network);
 
@@ -425,7 +436,7 @@ static void check_dhcpv6(struct nd_router_advert *reply,
 			DBG("re-send router solicitation %d",
 						network->router_solicit_count);
 			network->router_solicit_count--;
-			__connman_inet_ipv6_send_rs(network->index, 1,
+			__connman_inet_ipv6_send_rs(network->index, RTR_SOLICITATION_INTERVAL,
 						check_dhcpv6, network);
 			return;
 		}
@@ -575,7 +586,8 @@ static void autoconf_ipv6_set(struct connman_network *network)
 
 	/* Try to get stateless DHCPv6 information, RFC 3736 */
 	network->router_solicit_count = 3;
-	__connman_inet_ipv6_send_rs(index, 1, check_dhcpv6, network);
+	__connman_inet_ipv6_send_rs(index, RTR_SOLICITATION_INTERVAL,
+			check_dhcpv6, network);
 }
 
 static void set_connected(struct connman_network *network)
@@ -646,10 +658,20 @@ static void set_disconnected(struct connman_network *network)
 		switch (ipv4_method) {
 		case CONNMAN_IPCONFIG_METHOD_UNKNOWN:
 		case CONNMAN_IPCONFIG_METHOD_OFF:
-		case CONNMAN_IPCONFIG_METHOD_AUTO:
 		case CONNMAN_IPCONFIG_METHOD_FIXED:
 		case CONNMAN_IPCONFIG_METHOD_MANUAL:
 			break;
+		case CONNMAN_IPCONFIG_METHOD_AUTO:
+			/*
+			 * If the current method is AUTO then next time we
+			 * try first DHCP. DHCP also needs to be stopped
+			 * in this case because if we fell in AUTO means
+			 * that DHCP  was launched for IPv4 but it failed.
+			 */
+			__connman_ipconfig_set_method(ipconfig_ipv4,
+						CONNMAN_IPCONFIG_METHOD_DHCP);
+			__connman_service_notify_ipv4_configuration(service);
+			/* fall through */
 		case CONNMAN_IPCONFIG_METHOD_DHCP:
 			__connman_dhcp_stop(ipconfig_ipv4);
 			break;
@@ -896,6 +918,10 @@ static void network_destruct(struct connman_network *network)
 	g_free(network->wifi.anonymous_identity);
 	g_free(network->wifi.agent_identity);
 	g_free(network->wifi.ca_cert_path);
+	g_free(network->wifi.subject_match);
+	g_free(network->wifi.altsubject_match);
+	g_free(network->wifi.domain_suffix_match);
+	g_free(network->wifi.domain_match);
 	g_free(network->wifi.client_cert_path);
 	g_free(network->wifi.private_key_path);
 	g_free(network->wifi.private_key_passphrase);
@@ -927,13 +953,9 @@ struct connman_network *connman_network_create(const char *identifier,
 	struct connman_network *network;
 	char *ident;
 
-	DBG("identifier %s type %d", identifier, type);
-
 	network = g_try_new0(struct connman_network, 1);
 	if (!network)
 		return NULL;
-
-	DBG("network %p", network);
 
 	network->refcount = 1;
 
@@ -949,6 +971,8 @@ struct connman_network *connman_network_create(const char *identifier,
 
 	network_list = g_slist_prepend(network_list, network);
 
+	DBG("network %p identifier %s type %s", network, identifier,
+		type2string(type));
 	return network;
 }
 
@@ -1253,6 +1277,16 @@ static void set_connect_error(struct connman_network *network)
 					CONNMAN_SERVICE_ERROR_CONNECT_FAILED);
 }
 
+static void set_blocked_error(struct connman_network *network)
+{
+	struct connman_service *service;
+
+	service = connman_service_lookup_from_network(network);
+
+	__connman_service_indicate_error(service,
+					CONNMAN_SERVICE_ERROR_BLOCKED);
+}
+
 void connman_network_set_ipv4_method(struct connman_network *network,
 					enum connman_ipconfig_method method)
 {
@@ -1306,6 +1340,9 @@ void connman_network_set_error(struct connman_network *network,
 		break;
 	case CONNMAN_NETWORK_ERROR_CONNECT_FAIL:
 		set_connect_error(network);
+		break;
+	case CONNMAN_NETWORK_ERROR_BLOCKED:
+		set_blocked_error(network);
 		break;
 	}
 
@@ -1444,9 +1481,9 @@ int __connman_network_connect(struct connman_network *network)
 	if (!network->device)
 		return -ENODEV;
 
-	network->connecting = true;
-
 	__connman_device_disconnect(network->device);
+
+	network->connecting = true;
 
 	err = network->driver->connect(network);
 	if (err < 0) {
@@ -1721,8 +1758,6 @@ int connman_network_set_name(struct connman_network *network,
 int connman_network_set_strength(struct connman_network *network,
 						uint8_t strength)
 {
-	DBG("network %p strengh %d", network, strength);
-
 	network->strength = strength;
 
 	return 0;
@@ -1736,8 +1771,6 @@ uint8_t connman_network_get_strength(struct connman_network *network)
 int connman_network_set_frequency(struct connman_network *network,
 						uint16_t frequency)
 {
-	DBG("network %p frequency %d", network, frequency);
-
 	network->frequency = frequency;
 
 	return 0;
@@ -1751,8 +1784,6 @@ uint16_t connman_network_get_frequency(struct connman_network *network)
 int connman_network_set_wifi_channel(struct connman_network *network,
 						uint16_t channel)
 {
-	DBG("network %p wifi channel %d", network, channel);
-
 	network->wifi.channel = channel;
 
 	return 0;
@@ -1774,8 +1805,6 @@ uint16_t connman_network_get_wifi_channel(struct connman_network *network)
 int connman_network_set_string(struct connman_network *network,
 					const char *key, const char *value)
 {
-	DBG("network %p key %s value %s", network, key, value);
-
 	if (g_strcmp0(key, "Name") == 0)
 		return connman_network_set_name(network, value);
 
@@ -1809,6 +1838,18 @@ int connman_network_set_string(struct connman_network *network,
 	} else if (g_str_equal(key, "WiFi.CACertFile")) {
 		g_free(network->wifi.ca_cert_path);
 		network->wifi.ca_cert_path = g_strdup(value);
+	} else if (g_str_equal(key, "WiFi.SubjectMatch")) {
+		g_free(network->wifi.subject_match);
+		network->wifi.subject_match = g_strdup(value);
+	} else if (g_str_equal(key, "WiFi.AltSubjectMatch")) {
+		g_free(network->wifi.altsubject_match);
+		network->wifi.altsubject_match = g_strdup(value);
+	} else if (g_str_equal(key, "WiFi.DomainSuffixMatch")) {
+		g_free(network->wifi.domain_suffix_match);
+		network->wifi.domain_suffix_match = g_strdup(value);
+	} else if (g_str_equal(key, "WiFi.DomainMatch")) {
+		g_free(network->wifi.domain_match);
+		network->wifi.domain_match = g_strdup(value);
 	} else if (g_str_equal(key, "WiFi.ClientCertFile")) {
 		g_free(network->wifi.client_cert_path);
 		network->wifi.client_cert_path = g_strdup(value);
@@ -1841,8 +1882,6 @@ int connman_network_set_string(struct connman_network *network,
 const char *connman_network_get_string(struct connman_network *network,
 							const char *key)
 {
-	DBG("network %p key %s", network, key);
-
 	if (g_str_equal(key, "Path"))
 		return network->path;
 	else if (g_str_equal(key, "Name"))
@@ -1865,6 +1904,14 @@ const char *connman_network_get_string(struct connman_network *network,
 		return network->wifi.agent_identity;
 	else if (g_str_equal(key, "WiFi.CACertFile"))
 		return network->wifi.ca_cert_path;
+	else if (g_str_equal(key, "WiFi.SubjectMatch"))
+		return network->wifi.subject_match;
+	else if (g_str_equal(key, "WiFi.AltSubjectMatch"))
+		return network->wifi.altsubject_match;
+	else if (g_str_equal(key, "WiFi.DomainSuffixMatch"))
+		return network->wifi.domain_suffix_match;
+	else if (g_str_equal(key, "WiFi.DomainMatch"))
+		return network->wifi.domain_match;
 	else if (g_str_equal(key, "WiFi.ClientCertFile"))
 		return network->wifi.client_cert_path;
 	else if (g_str_equal(key, "WiFi.PrivateKeyFile"))
@@ -1890,12 +1937,12 @@ const char *connman_network_get_string(struct connman_network *network,
 int connman_network_set_bool(struct connman_network *network,
 					const char *key, bool value)
 {
-	DBG("network %p key %s value %d", network, key, value);
-
 	if (g_strcmp0(key, "Roaming") == 0)
 		network->roaming = value;
 	else if (g_strcmp0(key, "WiFi.WPS") == 0)
 		network->wifi.wps = value;
+	else if (g_strcmp0(key, "WiFi.WPSAdvertising") == 0)
+		network->wifi.wps_advertizing = value;
 	else if (g_strcmp0(key, "WiFi.UseWPS") == 0)
 		network->wifi.use_wps = value;
 
@@ -1912,12 +1959,12 @@ int connman_network_set_bool(struct connman_network *network,
 bool connman_network_get_bool(struct connman_network *network,
 							const char *key)
 {
-	DBG("network %p key %s", network, key);
-
 	if (g_str_equal(key, "Roaming"))
 		return network->roaming;
 	else if (g_str_equal(key, "WiFi.WPS"))
 		return network->wifi.wps;
+	else if (g_str_equal(key, "WiFi.WPSAdvertising"))
+		return network->wifi.wps_advertizing;
 	else if (g_str_equal(key, "WiFi.UseWPS"))
 		return network->wifi.use_wps;
 
@@ -1936,8 +1983,6 @@ bool connman_network_get_bool(struct connman_network *network,
 int connman_network_set_blob(struct connman_network *network,
 			const char *key, const void *data, unsigned int size)
 {
-	DBG("network %p key %s size %d", network, key, size);
-
 	if (g_str_equal(key, "WiFi.SSID")) {
 		g_free(network->wifi.ssid);
 		network->wifi.ssid = g_try_malloc(size);
@@ -1964,8 +2009,6 @@ int connman_network_set_blob(struct connman_network *network,
 const void *connman_network_get_blob(struct connman_network *network,
 					const char *key, unsigned int *size)
 {
-	DBG("network %p key %s", network, key);
-
 	if (g_str_equal(key, "WiFi.SSID")) {
 		if (size)
 			*size = network->wifi.ssid_len;

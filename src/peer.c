@@ -176,7 +176,7 @@ static int start_dhcp_server(struct connman_peer *peer)
 	if (err < 0)
 		goto error;
 
-	g_timeout_add_seconds(0, dhcp_server_started, connman_peer_ref(peer));
+	g_idle_add(dhcp_server_started, connman_peer_ref(peer));
 
 	return 0;
 
@@ -606,6 +606,9 @@ static int peer_connect(struct connman_peer *peer)
 {
 	int err = -ENOTSUP;
 
+	if (is_connected(peer))
+		return -EISCONN;
+
 	if (peer_driver->connect)
 		err = peer_driver->connect(peer,
 					CONNMAN_PEER_WPS_UNKNOWN, NULL);
@@ -758,7 +761,7 @@ void connman_peer_set_name(struct connman_peer *peer, const char *name)
 void connman_peer_set_iface_address(struct connman_peer *peer,
 					const unsigned char *iface_address)
 {
-	memset(peer->iface_address, 0, ETH_ALEN);
+	memset(peer->iface_address, 0, sizeof(peer->iface_address));
 	memcpy(peer->iface_address, iface_address, ETH_ALEN);
 }
 

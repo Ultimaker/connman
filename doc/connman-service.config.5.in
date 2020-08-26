@@ -18,8 +18,7 @@ eduroam, or for static IPs and so on. Each provisioning file can be
 used for multiple services at once.
 .SH "FILE FORMAT"
 .P
-The configuration file format is key file format.
-It consists of sections (groups) of key-value pairs.
+The configuration file consists of sections (groups) of key-value pairs.
 Lines beginning with a '#' and blank lines are considered comments.
 Sections are started by a header line containing the section enclosed
 in '[' and ']', and ended implicitly by the start of the next section
@@ -96,6 +95,8 @@ configured, \fBpsk\fP if a passphrase is present and \fBnone\fP otherwise.
 If set to \fBtrue\fP, then this AP is hidden. If missing or set to
 \fBfalse\fP, then AP is not hidden.
 .TP
+The following keys are used for WPA EAP (when \fBSecurity=ieee8021x\fP):
+.TP
 .B EAP=tls \fR|\fB ttls \fR|\fB peap
 EAP type to use. Only \fBtls\fP, \fBttls\fP and \fBpeap\fP are supported.
 .TP
@@ -117,6 +118,22 @@ Identity string for EAP.
 .TP
 .BI AnonymousIdentity= identity
 Anonymous identity string for EAP.
+.TP
+.BI SubjectMatch= substring
+Substring to be matched against the subject of the
+authentication server certificate for EAP.
+.TP
+.BI AltSubjectMatch= substring
+Semicolon separated string of entries to be matched against the alternative
+subject name of the authentication server certificate for EAP.
+.TP
+.BI DomainSuffixMatch= domain
+Constraint for server domain name. If set, this FQDN is used as a suffix match
+requirement for the authentication server certificate for EAP.
+.TP
+.BI DomainMatch= domain
+This FQDN is used as a full match requirement for the
+authentication server certificate for EAP.
 .TP
 .BI Phase2= type
 Inner authentication type with for \fBEAP=tls\fP or \fBEAP=ttls\fP. Prefix
@@ -150,48 +167,3 @@ you should use the Name entry instead (e.g. "Name = tls_ssid").
 Name = Example
 Description = Example network configuration
 
-[service_tls]
-Type = wifi
-SSID = 746c735f73736964
-EAP = tls
-CACertFile = /home/user/.certs/ca.pem
-ClientCertFile = /home/user/devlp/.certs/client.pem
-PrivateKeyFile = /home/user/.certs/client.fsid.pem
-PrivateKeyPassphraseType = fsid
-Identity = user
-
-[service_ttls]
-Type = wifi
-Name = ttls_ssid
-EAP = ttls
-CACertFile = /home/user/.cert/ca.pem
-Phase2 = MSCHAPV2
-Identity = user
-
-[service_peap]
-Type = wifi
-Name = peap_ssid
-EAP = peap
-CACertFile = /home/user/.cert/ca.pem
-Phase2 = MSCHAPV2
-Identity = user
-
-[service_home_ethernet]
-Type = ethernet
-IPv4 = 192.168.1.42/255.255.255.0/192.168.1.1
-IPv6 = 2001:db8::42/64/2001:db8::1
-MAC = 01:02:03:04:05:06
-Nameservers = 10.2.3.4,192.168.1.99
-SearchDomains = my.home,isp.net
-Timeservers = 10.172.2.1,ntp.my.isp.net
-Domain = my.home
-
-[service_home_wifi]
-Type = wifi
-Name = my_home_wifi
-Passphrase = password
-IPv4 = 192.168.2.2/255.255.255.0/192.168.2.1
-MAC = 06:05:04:03:02:01
-.fi
-.SH "SEE ALSO"
-.BR connman (8)

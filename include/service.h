@@ -79,6 +79,7 @@ enum connman_service_error {
 	CONNMAN_SERVICE_ERROR_LOGIN_FAILED  = 5,
 	CONNMAN_SERVICE_ERROR_AUTH_FAILED    = 6,
 	CONNMAN_SERVICE_ERROR_INVALID_KEY    = 7,
+	CONNMAN_SERVICE_ERROR_BLOCKED        = 8,
 };
 
 enum connman_service_proxy_method {
@@ -129,6 +130,7 @@ bool connman_service_get_favorite(struct connman_service *service);
 bool connman_service_get_autoconnect(struct connman_service *service);
 
 struct connman_service *connman_service_lookup_from_network(struct connman_network *network);
+struct connman_service *connman_service_lookup_from_identifier(const char* identifier);
 
 void connman_service_create_ip4config(struct connman_service *service,
 								int index);

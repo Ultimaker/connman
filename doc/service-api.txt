@@ -91,8 +91,9 @@ Methods		dict GetProperties()  [deprecated]
 			to false, but that is currently not supported.
 
 			In the case a connection attempt failed and the
-			service is in the State=failure, this method can
-			also be used to reset the service.
+			service is in the state "failure", "idle" or
+			"disconnect", this method can also be used
+			to reset the service.
 
 			Calling this method on Ethernet devices, hidden WiFi
 			services or provisioned services will cause an error
@@ -186,8 +187,15 @@ Properties	string State [readonly]
 			present and contains the list of security methods
 			or key management settings.
 
-			Possible values are "none", "wep", "psk", "ieee8021x"
-			and also "wps".
+			Possible values are "none", "wep", "psk", "ieee8021x",
+			and also "wps" and "wps_advertising".
+
+			Value "wps" means that the service supports WPS. A
+			service advertising itself as WPS registrar contains
+			the additional value "wps_advertising" for as long as
+			it is advertising. That is, while "wps_advertising" is
+			listed, WPS is active and it should be possible to
+			connect to the corresponding service via WPS.
 
 			This property might be only present for WiFi
 			services.
@@ -307,8 +315,14 @@ Properties	string State [readonly]
 
 			string Method [readonly]
 
-				Possible values are "dhcp", "manual"
+				Possible values are "dhcp", "manual", "auto"
 				and "off".
+
+				It could be "auto" in case address was got
+				through IPv4LL after DHCP failed. In this
+				case also IPv4.Configuration will become
+				"auto" to allow user to ask for a DHCP
+				address at any time.
 
 				The value "fixed" indicates an IP address
 				that can not be modified. For example
@@ -493,3 +507,16 @@ Properties	string State [readonly]
 				Possible values are "half" and "full".
 
 				This information is not available.
+
+		bool mDNS [readonly]
+
+			Whether or not mDNS support is enabled. Note
+			that mDNS requires a DNS backend which
+			supports it. Currently the only DNS backend
+			which supports mDNS is systemd-resolved.
+
+		bool mDNS.Configuration [readwrite]
+
+			Same values as mDNS property. The mDNS
+			represents the actual system configuration
+			while this allows user configuration.

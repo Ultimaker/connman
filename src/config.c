@@ -47,6 +47,10 @@ struct connman_config_service {
 	char *identity;
 	char *anonymous_identity;
 	char *ca_cert_file;
+	char *subject_match;
+	char *altsubject_match;
+	char *domain_suffix_match;
+	char *domain_match;
 	char *client_cert_file;
 	char *private_key_file;
 	char *private_key_passphrase;
@@ -68,6 +72,7 @@ struct connman_config_service {
 	char *ipv6_gateway;
 	char *ipv6_privacy;
 	char *mac;
+	bool mdns;
 	char **nameservers;
 	char **search_domains;
 	char **timeservers;
@@ -100,10 +105,15 @@ static bool cleanup = false;
 #define SERVICE_KEY_PRV_KEY_PASS_TYPE  "PrivateKeyPassphraseType"
 #define SERVICE_KEY_IDENTITY           "Identity"
 #define SERVICE_KEY_ANONYMOUS_IDENTITY "AnonymousIdentity"
+#define SERVICE_KEY_SUBJECT_MATCH      "SubjectMatch"
+#define SERVICE_KEY_ALT_SUBJECT_MATCH  "AltSubjectMatch"
+#define SERVICE_KEY_DOMAIN_SUFF_MATCH  "DomainSuffixMatch"
+#define SERVICE_KEY_DOMAIN_MATCH       "DomainMatch"
 #define SERVICE_KEY_PHASE2             "Phase2"
 #define SERVICE_KEY_PASSPHRASE         "Passphrase"
 #define SERVICE_KEY_SECURITY           "Security"
 #define SERVICE_KEY_HIDDEN             "Hidden"
+#define SERVICE_KEY_MDNS               "mDNS"
 
 #define SERVICE_KEY_IPv4               "IPv4"
 #define SERVICE_KEY_IPv6               "IPv6"
@@ -132,6 +142,10 @@ static const char *service_possible_keys[] = {
 	SERVICE_KEY_PRV_KEY_PASS_TYPE,
 	SERVICE_KEY_IDENTITY,
 	SERVICE_KEY_ANONYMOUS_IDENTITY,
+	SERVICE_KEY_SUBJECT_MATCH,
+	SERVICE_KEY_ALT_SUBJECT_MATCH,
+	SERVICE_KEY_DOMAIN_SUFF_MATCH,
+	SERVICE_KEY_DOMAIN_MATCH,
 	SERVICE_KEY_PHASE2,
 	SERVICE_KEY_PASSPHRASE,
 	SERVICE_KEY_SECURITY,
@@ -140,6 +154,7 @@ static const char *service_possible_keys[] = {
 	SERVICE_KEY_IPv6,
 	SERVICE_KEY_IPv6_PRIVACY,
 	SERVICE_KEY_MAC,
+	SERVICE_KEY_MDNS,
 	SERVICE_KEY_NAMESERVERS,
 	SERVICE_KEY_SEARCH_DOMAINS,
 	SERVICE_KEY_TIMESERVERS,
@@ -225,6 +240,10 @@ free_only:
 	g_free(config_service->identity);
 	g_free(config_service->anonymous_identity);
 	g_free(config_service->ca_cert_file);
+	g_free(config_service->subject_match);
+	g_free(config_service->altsubject_match);
+	g_free(config_service->domain_suffix_match);
+	g_free(config_service->domain_match);
 	g_free(config_service->client_cert_file);
 	g_free(config_service->private_key_file);
 	g_free(config_service->private_key_passphrase);
@@ -498,6 +517,9 @@ static bool load_service_generic(GKeyFile *keyfile,
 			g_strfreev(strlist);
 	}
 
+	service->mdns = __connman_config_get_bool(keyfile, group,
+						SERVICE_KEY_MDNS, NULL);
+
 	return true;
 
 err:
@@ -548,8 +570,8 @@ static bool load_service(GKeyFile *keyfile, const char *group,
 		g_free(service->type);
 		service->type = str;
 	} else {
-		DBG("Type of the configured service is missing for group %s",
-									group);
+		connman_warn("Type of the configured service is missing "
+			"for group %s",	group);
 		goto err;
 	}
 
@@ -666,6 +688,34 @@ static bool load_service(GKeyFile *keyfile, const char *group,
 		service->anonymous_identity = str;
 	}
 
+	str = __connman_config_get_string(keyfile, group,
+					SERVICE_KEY_SUBJECT_MATCH, NULL);
+	if (str) {
+		g_free(service->subject_match);
+		service->subject_match = str;
+	}
+
+	str = __connman_config_get_string(keyfile, group,
+					SERVICE_KEY_ALT_SUBJECT_MATCH, NULL);
+	if (str) {
+		g_free(service->altsubject_match);
+		service->altsubject_match = str;
+	}
+
+	str = __connman_config_get_string(keyfile, group,
+					SERVICE_KEY_DOMAIN_SUFF_MATCH, NULL);
+	if (str) {
+		g_free(service->domain_suffix_match);
+		service->domain_suffix_match = str;
+	}
+
+	str = __connman_config_get_string(keyfile, group,
+					SERVICE_KEY_DOMAIN_MATCH, NULL);
+	if (str) {
+		g_free(service->domain_match);
+		service->domain_match = str;
+	}
+
 	str = __connman_config_get_string(keyfile, group, SERVICE_KEY_PHASE2, NULL);
 	if (str) {
 		g_free(service->phase2);
@@ -716,9 +766,9 @@ static bool load_service(GKeyFile *keyfile, const char *group,
 					"setting %s = %s",
 					SERVICE_KEY_SECURITY, str);
 
-			service->security = CONNMAN_SERVICE_SECURITY_NONE;
+		service->security = CONNMAN_SERVICE_SECURITY_NONE;
 	} else
-			service->security = CONNMAN_SERVICE_SECURITY_NONE;
+		service->security = CONNMAN_SERVICE_SECURITY_NONE;
 
 	g_free(str);
 
@@ -758,8 +808,11 @@ static bool load_service_from_keyfile(GKeyFile *keyfile,
 	groups = g_key_file_get_groups(keyfile, NULL);
 
 	for (i = 0; groups[i]; i++) {
-		if (!g_str_has_prefix(groups[i], "service_"))
+		if (!g_str_has_prefix(groups[i], "service_")) {
+			connman_warn("Ignore group named '%s' because prefix "
+				"is not 'service_'", groups[i]);
 			continue;
+		}
 		if (load_service(keyfile, groups[i], config))
 			found = true;
 	}
@@ -1060,6 +1113,22 @@ static void provision_service_wifi(struct connman_config_service *config,
 		__connman_service_set_string(service, "CACertFile",
 							config->ca_cert_file);
 
+	if (config->subject_match)
+		__connman_service_set_string(service, "SubjectMatch",
+							config->subject_match);
+
+	if (config->altsubject_match)
+		__connman_service_set_string(service, "AltSubjectMatch",
+							config->altsubject_match);
+
+	if (config->domain_suffix_match)
+		__connman_service_set_string(service, "DomainSuffixMatch",
+							config->domain_suffix_match);
+
+	if (config->domain_match)
+		__connman_service_set_string(service, "DomainMatch",
+							config->domain_match);
+
 	if (config->client_cert_file)
 		__connman_service_set_string(service, "ClientCertFile",
 						config->client_cert_file);
@@ -1149,10 +1218,8 @@ static int try_provision_service(struct connman_config_service *config,
 
 		ssid = connman_network_get_blob(network, "WiFi.SSID",
 						&ssid_len);
-		if (!ssid) {
-			connman_error("Network SSID not set");
-			return -EINVAL;
-		}
+		if (!ssid)
+			return -ENOENT;
 
 		if (!config->ssid || ssid_len != config->ssid_len)
 			return -ENOENT;
@@ -1317,6 +1384,8 @@ static int try_provision_service(struct connman_config_service *config,
 		__connman_service_set_search_domains(service,
 						config->search_domains);
 
+	__connman_service_set_mdns(service, config->mdns);
+
 	if (config->timeservers)
 		__connman_service_set_timeservers(service,
 						config->timeservers);
@@ -1337,7 +1406,7 @@ static int try_provision_service(struct connman_config_service *config,
 		virtual->service = service;
 		virtual->vfile = config->virtual_file;
 
-		g_timeout_add(0, remove_virtual_config, virtual);
+		g_idle_add(remove_virtual_config, virtual);
 
 		return 0;
 	}
@@ -1499,7 +1568,7 @@ int connman_config_provision_mutable_service(GKeyFile *keyfile)
 {
 	struct connman_config_service *service_config;
 	struct connman_config *config;
-	char *vfile, *group;
+	char *vfile, *group = NULL;
 	char rstr[11];
 
 	DBG("");
@@ -1535,13 +1604,14 @@ int connman_config_provision_mutable_service(GKeyFile *keyfile)
 	if (g_strcmp0(service_config->type, "wifi") == 0)
 		__connman_device_request_scan(CONNMAN_SERVICE_TYPE_WIFI);
 
+	g_free(group);
 	return 0;
 
 error:
 	DBG("Could not proceed");
 	g_hash_table_remove(config_table, vfile);
 	g_free(vfile);
-
+	g_free(group);
 	return -EINVAL;
 }
 

@@ -240,18 +240,26 @@ int __connman_inet_rtnl_addattr32(struct nlmsghdr *n, size_t maxlen,
 int __connman_inet_add_fwmark_rule(uint32_t table_id, int family, uint32_t fwmark);
 int __connman_inet_del_fwmark_rule(uint32_t table_id, int family, uint32_t fwmark);
 int __connman_inet_add_default_to_table(uint32_t table_id, int ifindex, const char *gateway);
+int __connman_inet_add_subnet_to_table(uint32_t table_id, int ifindex,
+			const char *gateway, unsigned char prefixlen);
 int __connman_inet_del_default_from_table(uint32_t table_id, int ifindex, const char *gateway);
+int __connman_inet_del_subnet_from_table(uint32_t table_id, int ifindex,
+			const char *gateway, unsigned char prefixlen);
 int __connman_inet_get_address_netmask(int ifindex,
 		struct sockaddr_in *address, struct sockaddr_in *netmask);
 
+bool __connman_inet_isrootnfs_device(const char *devname);
+char **__connman_inet_get_pnp_nameservers(const char *pnp_file);
+
 #include <connman/resolver.h>
 
-int __connman_resolver_init(gboolean dnsproxy, gboolean captiveproxy);
+int __connman_resolver_init(gboolean dnsproxy);
 void __connman_resolver_cleanup(void);
 void __connman_resolver_append_fallback_nameservers(void);
 int __connman_resolvfile_append(int index, const char *domain, const char *server);
 int __connman_resolvfile_remove(int index, const char *domain, const char *server);
 int __connman_resolver_redo_servers(int index);
+int __connman_resolver_set_mdns(int index, bool enabled);
 
 GKeyFile *__connman_storage_open_global(void);
 GKeyFile *__connman_storage_load_global(void);
@@ -440,7 +448,6 @@ GSList *__connman_timeserver_add_list(GSList *server_list,
 		const char *timeserver);
 GSList *__connman_timeserver_get_all(struct connman_service *service);
 int __connman_timeserver_sync(struct connman_service *service);
-void __connman_timeserver_sync_next();
 
 enum __connman_dhcpv6_status {
 	CONNMAN_DHCPV6_STATUS_FAIL     = 0,
@@ -494,10 +501,10 @@ void __connman_connection_gateway_remove(struct connman_service *service,
 int __connman_connection_get_vpn_index(int phy_index);
 
 bool __connman_connection_update_gateway(void);
-void __connman_connection_gateway_activate(struct connman_service *service,
-					enum connman_ipconfig_type type);
 
-int __connman_ntp_start(char *server);
+typedef void (*__connman_ntp_cb_t) (bool success, void *user_data);
+int __connman_ntp_start(char *server, __connman_ntp_cb_t callback,
+			void *user_data);
 void __connman_ntp_stop();
 
 int __connman_wpad_init(void);
@@ -559,6 +566,7 @@ int __connman_device_request_hidden_scan(struct connman_device *device,
 				const char *ssid, unsigned int ssid_len,
 				const char *identity, const char *passphrase,
 				const char *security, void *user_data);
+void __connman_device_stop_scan(enum connman_service_type type);
 
 bool __connman_device_isfiltered(const char *devname);
 
@@ -622,7 +630,7 @@ int __connman_tethering_init(void);
 void __connman_tethering_cleanup(void);
 
 const char *__connman_tethering_get_bridge(void);
-void __connman_tethering_set_enabled(void);
+int __connman_tethering_set_enabled(void);
 void __connman_tethering_set_disabled(void);
 
 int __connman_private_network_request(DBusMessage *msg, const char *owner);
@@ -679,6 +687,10 @@ struct connman_ipconfig *__connman_service_get_ip6config(
 				struct connman_service *service);
 struct connman_ipconfig *__connman_service_get_ipconfig(
 				struct connman_service *service, int family);
+void __connman_service_notify_ipv4_configuration(
+				struct connman_service *service);
+void __connman_service_wispr_start(struct connman_service *service,
+                                enum connman_ipconfig_type type);
 bool __connman_service_is_connected_state(struct connman_service *service,
 					enum connman_ipconfig_type type);
 const char *__connman_service_get_ident(struct connman_service *service);
@@ -686,7 +698,6 @@ const char *__connman_service_get_path(struct connman_service *service);
 const char *__connman_service_get_name(struct connman_service *service);
 unsigned int __connman_service_get_order(struct connman_service *service);
 enum connman_service_state __connman_service_get_state(struct connman_service *service);
-void __connman_service_update_ordering(void);
 struct connman_network *__connman_service_get_network(struct connman_service *service);
 enum connman_service_security __connman_service_get_security(struct connman_service *service);
 const char *__connman_service_get_phase2(struct connman_service *service);
@@ -702,6 +713,8 @@ int __connman_service_set_ignore(struct connman_service *service,
 						bool ignore);
 void __connman_service_set_search_domains(struct connman_service *service,
 					char **domains);
+int __connman_service_set_mdns(struct connman_service *service,
+					bool enabled);
 
 void __connman_service_set_string(struct connman_service *service,
 					const char *key, const char *value);
@@ -779,6 +792,14 @@ void __connman_service_set_identity(struct connman_service *service,
 					const char *identity);
 void __connman_service_set_anonymous_identity(struct connman_service *service,
 					const char *anonymous_identity);
+void __connman_service_set_subject_match(struct connman_service *service,
+					const char *subject_match);
+void __connman_service_set_altsubject_match(struct connman_service *service,
+					const char *altsubject_match);
+void __connman_service_set_domain_suffix_match(struct connman_service *service,
+					const char *domain_suffix_match);
+void __connman_service_set_domain_match(struct connman_service *service,
+					const char *domain_match);
 void __connman_service_set_agent_identity(struct connman_service *service,
 						const char *agent_identity);
 int __connman_service_set_passphrase(struct connman_service *service,
@@ -932,17 +953,13 @@ int __connman_iptables_init(void);
 void __connman_iptables_cleanup(void);
 int __connman_iptables_commit(const char *table_name);
 
-int __connman_dnsproxy_init(gboolean captiveproxy);
+int __connman_dnsproxy_init(void);
 void __connman_dnsproxy_cleanup(void);
 int __connman_dnsproxy_add_listener(int index);
 void __connman_dnsproxy_remove_listener(int index);
 int __connman_dnsproxy_append(int index, const char *domain, const char *server);
 int __connman_dnsproxy_remove(int index, const char *domain, const char *server);
-int __connman_dnsproxy_captive_proxy_tethering_exclude_client_in4(bool excluded,
-						struct in_addr *client_addr4);
-int __connman_dnsproxy_captive_proxy_tethering_exclude_client_in6(bool excluded,
-						struct in6_addr *client_addr6);
-int __connman_dnsproxy_set_debug_dns_packet_data_enabled(bool enabled);
+int __connman_dnsproxy_set_mdns(int index, bool enabled);
 
 int __connman_6to4_probe(struct connman_service *service);
 void __connman_6to4_remove(struct connman_ipconfig *ipconfig);
@@ -1000,16 +1017,19 @@ struct firewall_context;
 
 struct firewall_context *__connman_firewall_create(void);
 void __connman_firewall_destroy(struct firewall_context *ctx);
-int __connman_firewall_add_rule(struct firewall_context *ctx,
-				const char *table,
-				const char *chain,
-				const char *rule_fmt, ...);
-int __connman_firewall_remove_rule(struct firewall_context *ctx, int id);
-int __connman_firewall_enable_rule(struct firewall_context *ctx, int id);
-int __connman_firewall_disable_rule(struct firewall_context *ctx, int id);
-int __connman_firewall_enable(struct firewall_context *ctx);
-int __connman_firewall_disable(struct firewall_context *ctx);
-bool __connman_firewall_is_up(void);
+int __connman_firewall_enable_nat(struct firewall_context *ctx,
+					char *address, unsigned char prefixlen,
+					char *interface);
+int __connman_firewall_disable_nat(struct firewall_context *ctx);
+int __connman_firewall_enable_snat(struct firewall_context *ctx,
+				int index, const char *ifname,
+				const char *addr);
+int __connman_firewall_disable_snat(struct firewall_context *ctx);
+int __connman_firewall_enable_marking(struct firewall_context *ctx,
+					enum connman_session_id_type id_type,
+					char *id, const char *src_ip,
+					uint32_t mark);
+int __connman_firewall_disable_marking(struct firewall_context *ctx);
 
 int __connman_firewall_init(void);
 void __connman_firewall_cleanup(void);
