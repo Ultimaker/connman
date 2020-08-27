@@ -3069,7 +3069,7 @@ int __connman_service_check_passphrase(enum connman_service_security security,
 				if (!isxdigit((unsigned char)
 					      passphrase[i]))
 					return -ENOKEY;
-		} else if (length < 8 || length > 63)
+		} else if ((length < 8 || length > 63) && length != 0)
 			return -ENOKEY;
 		break;
 	case CONNMAN_SERVICE_SECURITY_WEP:
