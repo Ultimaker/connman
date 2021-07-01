@@ -98,7 +98,7 @@ static struct {
 	.persistent_tethering_mode = false,
 	.enable_6to4 = false,
 	.vendor_class_id = NULL,
-	.enable_online_check = true,
+	.enable_online_check = false,
 	.auto_connect_roaming_services = false,
 };
 
