@@ -82,7 +82,7 @@ static struct {
 	bool enable_online_check;
 	bool auto_connect_roaming_services;
 } connman_settings  = {
-	.bg_scan = false,
+	.bg_scan = true,
 	.pref_timeservers = NULL,
 	.auto_connect = NULL,
 	.preferred_techs = NULL,
