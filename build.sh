@@ -4,7 +4,7 @@
 set -eux
 
 ARCH="arm64"
-UM_ARCH="imx8m" # Empty string, or sun7i for R1, or imx6dl for R2, or imx8m for colorado
+UM_ARCH=""
 
 # common directory variablesS
 SRC_DIR="$(pwd)"
@@ -18,6 +18,14 @@ MODULES_LOAD_DIR="/etc/modules-load.d"
 
 DEBIAN_DIR="${BUILD_DIR}/debian"
 
+# Add the UM_ARCH (if any) to release version keeping a possible -dev on the most right side
+if [ -n "${UM_ARCH}" ]; then
+    if [[ ${RELEASE_VERSION} == *'-dev' ]]; then
+        RELEASE_VERSION="${RELEASE_VERSION/-dev/-${UM_ARCH}-dev}"
+    else
+        RELEASE_VERSION="${RELEASE_VERSION}-${UM_ARCH}"
+    fi;
+fi;
 
 build()
 {
@@ -46,7 +54,7 @@ create_debian_package()
     mkdir -p "${DEBIAN_DIR}/DEBIAN"
     sed -e 's|@ARCH@|'"${ARCH}"'|g' \
         -e 's|@PACKAGE_NAME@|'"${PACKAGE_NAME}"'|g' \
-        -e 's|@RELEASE_VERSION@|'"${RELEASE_VERSION}-${UM_ARCH}"'|g' \
+        -e 's|@RELEASE_VERSION@|'"${RELEASE_VERSION}"'|g' \
         "${SRC_DIR}/debian/control.in" > "${DEBIAN_DIR}/DEBIAN/control"
 
    
@@ -55,7 +63,7 @@ create_debian_package()
     mkdir -p "${DEBIAN_DIR}/${MODULES_LOAD_DIR}"
     cp "${SRC_DIR}/config/modules-load.d/connman.conf" "${DEBIAN_DIR}/${MODULES_LOAD_DIR}/"
 
-    DEB_PACKAGE="${PACKAGE_NAME}_${RELEASE_VERSION}-${UM_ARCH}_${ARCH}.deb"
+    DEB_PACKAGE="${PACKAGE_NAME}_${RELEASE_VERSION}_${ARCH}.deb"
 
     # Build the Debian package
     fakeroot dpkg-deb --build "${DEBIAN_DIR}" "${BUILD_DIR}/${DEB_PACKAGE}"
