@@ -3,8 +3,8 @@
 
 set -eux
 
-ARCH="arm64"
-UM_ARCH="imx8m" # Empty string, or sun7i for R1, or imx6dl for R2, or imx8m for colorado
+ARCH="${ARCH:-"armhf"}" # armhf (R1+R2) or arm64 (colorado)
+UM_ARCH="${UM_ARCH:-"sun7i"}" # Empty string, or sun7i for R1, or imx6dl for R2, or imx8m for colorado
 
 # common directory variablesS
 SRC_DIR="$(pwd)"
