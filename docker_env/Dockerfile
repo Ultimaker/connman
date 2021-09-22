@@ -1,4 +1,5 @@
-FROM balenalib/aarch64-debian:buster
+FROM arm32v7/debian:buster
+#FROM balenalib/aarch64-debian:buster
 
 LABEL Maintainer="software-embedded@ultimaker.com" \
       Comment="Ultimaker buster build environment"
