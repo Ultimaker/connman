@@ -6,7 +6,9 @@ set -eu
 
 LOCAL_REGISTRY_IMAGE="connman"
 
-ARCH="${ARCH:-"arm64"}"
+ARCH="${ARCH:-"armhf"}" # armhf (R1+R2) or arm64 (colorado)
+UM_ARCH="${UM_ARCH:-"sun7i"}" # Empty string, or sun7i for R1, or imx6dl for R2, or imx8m for colorado
+
 SRC_DIR="$(pwd)"
 RELEASE_VERSION="${RELEASE_VERSION:-}"
 DOCKER_WORK_DIR="/build"
@@ -28,6 +30,7 @@ run_in_docker()
         -u "$(id -u)" \
         -e "BUILD_DIR=${DOCKER_WORK_DIR}/${BUILD_DIR}" \
         -e "ARCH=${ARCH}" \
+        -e "UM_ARCH=${UM_ARCH}" \
         -e "RELEASE_VERSION=${RELEASE_VERSION}" \
         -e "MAKEFLAGS=-j$(($(getconf _NPROCESSORS_ONLN) - 1))" \
         -v "${SRC_DIR}:${DOCKER_WORK_DIR}" \
