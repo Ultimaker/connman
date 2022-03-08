@@ -6,8 +6,8 @@ set -eu
 
 LOCAL_REGISTRY_IMAGE="connman"
 
-ARCH="${ARCH:-"armhf"}" # armhf (R1+R2) or arm64 (colorado)
-UM_ARCH="${UM_ARCH:-"sun7i"}" # Empty string, or sun7i for R1, or imx6dl for R2, or imx8m for colorado
+ARCH="${ARCH:-"arm64"}" # armhf (R1+R2) or arm64 (colorado)
+UM_ARCH="${UM_ARCH:-"imx8m"}" # Empty string, or sun7i for R1, or imx6dl for R2, or imx8m for colorado
 
 SRC_DIR="$(pwd)"
 RELEASE_VERSION="${RELEASE_VERSION:-}"
