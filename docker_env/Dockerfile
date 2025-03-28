@@ -1,4 +1,4 @@
-FROM arm64v8/debian:buster
+FROM --platform=linux/amd64 registry.hub.docker.com/library/debian:buster
 
 LABEL Maintainer="software-embedded@ultimaker.com" \
       Comment="Ultimaker buster build environment"
