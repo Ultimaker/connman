@@ -2,7 +2,7 @@ Package: @PACKAGE_NAME@
 Version: @RELEASE_VERSION@
 Architecture: @ARCH@
 Maintainer: Anonymous <software-embedded@ultimaker.com>
-Depends: libc6 (>= 2.15), libdbus-1-3 (>= 1.9.14), libglib2.0-0 (>= 2.31.8), libgnutls30 (>= 3.6.5), libreadline7 (>= 6.0), libxtables12 (>= 1.6.0+snapshot20161117), dbus, lsb-base, iptables
+Depends: libc6 (>= 2.15), libdbus-1-3 (>= 1.9.14), libglib2.0-0 (>= 2.31.8), libgnutls30 (>= 3.6.5), libreadline8 (>= 6.0), libxtables12 (>= 1.6.0+snapshot20161117), dbus, lsb-base, iptables
 Priority: optional
 Description: Intel Connection Manager daemon
  The Linux Connection Manager project provides a daemon for managing
