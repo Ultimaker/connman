@@ -55,14 +55,6 @@ static bool agent_registered;
 #define IWD_AGENT_ERROR_INTERFACE	"net.connman.iwd.Agent.Error"
 #define AGENT_PATH			"/net/connman/iwd_agent"
 
-enum iwd_device_state {
-	IWD_DEVICE_STATE_UNKNOWN,
-	IWD_DEVICE_STATE_CONNECTED,
-	IWD_DEVICE_STATE_DISCONNECTED,
-	IWD_DEVICE_STATE_CONNECTING,
-	IWD_DEVICE_STATE_DISCONNECTING,
-};
-
 struct iwd_adapter {
 	GDBusProxy *proxy;
 	char *path;
@@ -77,7 +69,6 @@ struct iwd_device {
 	char *adapter;
 	char *name;
 	char *address;
-	enum iwd_device_state state;
 	bool powered;
 	bool scanning;
 
@@ -95,38 +86,6 @@ struct iwd_network {
 	struct iwd_device *iwdd;
 	struct connman_network *network;
 };
-
-static enum iwd_device_state string2state(const char *str)
-{
-	if (!strcmp(str, "connected"))
-		return IWD_DEVICE_STATE_CONNECTED;
-	else if (!strcmp(str, "disconnected"))
-		return IWD_DEVICE_STATE_DISCONNECTED;
-	else if (!strcmp(str, "connecting"))
-		return IWD_DEVICE_STATE_CONNECTING;
-	else if (!strcmp(str, "disconnecting"))
-		return IWD_DEVICE_STATE_DISCONNECTING;
-
-	return IWD_DEVICE_STATE_UNKNOWN;
-}
-
-static const char *state2string(enum iwd_device_state state)
-{
-	switch (state) {
-	case IWD_DEVICE_STATE_CONNECTED:
-		return "connected";
-	case IWD_DEVICE_STATE_DISCONNECTED:
-		return "disconnected";
-	case IWD_DEVICE_STATE_CONNECTING:
-		return "connecting";
-	case IWD_DEVICE_STATE_DISCONNECTING:
-		return "disconnecting";
-	default:
-		break;
-	}
-
-	return "unknown";
-}
 
 static const char *proxy_get_string(GDBusProxy *proxy, const char *property)
 {
@@ -664,13 +623,6 @@ static void device_property_change(GDBusProxy *proxy, const char *name,
 		iwdd->name = g_strdup(name);
 
 		DBG("%p name %s", path, iwdd->name);
-	} else if (!strcmp(name, "State")) {
-		const char *state;
-
-		dbus_message_iter_get_basic(iter, &state);
-		iwdd->state = string2state(state);
-
-		DBG("%s state %s", path, state2string(iwdd->state));
 	} else if (!strcmp(name, "Powered")) {
 		dbus_bool_t powered;
 
@@ -829,13 +781,11 @@ static void create_device(GDBusProxy *proxy)
 	iwdd->adapter = g_strdup(proxy_get_string(proxy, "Adapter"));
 	iwdd->name = g_strdup(proxy_get_string(proxy, "Name"));
 	iwdd->address = g_strdup(proxy_get_string(proxy, "Address"));
-	iwdd->state = string2state(proxy_get_string(proxy, "State"));
 	iwdd->powered = proxy_get_bool(proxy, "Powered");
 	iwdd->scanning = proxy_get_bool(proxy, "Scanning");
 
-	DBG("adapter %s name %s address %s state %s powered %d scanning %d",
+	DBG("adapter %s name %s address %s powered %d scanning %d",
 		iwdd->adapter, iwdd->name, iwdd->address,
-		state2string(iwdd->state),
 		iwdd->powered, iwdd->scanning);
 
 	g_dbus_proxy_set_property_watch(iwdd->proxy,
