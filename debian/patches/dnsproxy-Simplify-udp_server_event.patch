@@ -1,0 +1,40 @@
+From: Slava Monich <slava.monich@jolla.com>
+Date: Thu, 23 Aug 2018 18:24:41 +0300
+Subject: dnsproxy: Simplify udp_server_event()
+Origin: https://git.kernel.org/pub/scm/network/connman/connman.git/commit?id=de020cc7e8ad11f81c879f60f22348f8a7798d4c
+
+---
+ src/dnsproxy.c | 9 +++------
+ 1 file changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/src/dnsproxy.c b/src/dnsproxy.c
+index 1db3eae9cb47..49bc395c733a 100644
+--- a/src/dnsproxy.c
++++ b/src/dnsproxy.c
+@@ -2231,7 +2231,7 @@ static gboolean udp_server_event(GIOChannel *channel, GIOCondition condition,
+ 							gpointer user_data)
+ {
+ 	unsigned char buf[4096];
+-	int sk, err, len;
++	int sk, len;
+ 	struct server_data *data = user_data;
+ 
+ 	if (condition & (G_IO_NVAL | G_IO_ERR | G_IO_HUP)) {
+@@ -2243,12 +2243,9 @@ static gboolean udp_server_event(GIOChannel *channel, GIOCondition condition,
+ 	sk = g_io_channel_unix_get_fd(channel);
+ 
+ 	len = recv(sk, buf, sizeof(buf), 0);
+-	if (len < 12)
+-		return TRUE;
+ 
+-	err = forward_dns_reply(buf, len, IPPROTO_UDP, data);
+-	if (err < 0)
+-		return TRUE;
++	if (len >= 12)
++		forward_dns_reply(buf, len, IPPROTO_UDP, data);
+ 
+ 	return TRUE;
+ }
+-- 
+2.37.2
+

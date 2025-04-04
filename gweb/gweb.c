@@ -918,7 +918,7 @@ static gboolean received_data(GIOChannel *channel, GIOCondition cond,
 		}
 
 		*pos = '\0';
-		count = strlen((char *) ptr);
+		count = pos - ptr;
 		if (count > 0 && ptr[count - 1] == '\r') {
 			ptr[--count] = '\0';
 			bytes_read--;

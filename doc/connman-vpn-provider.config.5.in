@@ -12,7 +12,7 @@ connection_name.config \- ConnMan vpn connection provisioning file
 \fIConnMan\fP's vpn connections are configured with so called
 "\fBprovisioning files\fP" which reside under \fI@vpn_storagedir@/\fP.
 The files can be named anything, as long as they contain only printable
-ascii characers, for example letters, numbers and underscores. The file
+ascii characters, for example letters, numbers and underscores. The file
 must end with \fB.config\fP. Each VPN connection requires a provisioning
 file, but multiple connections can be specified in the same file.
 .SH "FILE FORMAT"

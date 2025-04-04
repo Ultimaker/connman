@@ -2148,6 +2148,7 @@ static char *uncompress(int16_t field_count, char *start, char *end,
 			char **uncompressed_ptr)
 {
 	char *uptr = *uncompressed_ptr; /* position in result buffer */
+	char * const uncomp_end = uncompressed + uncomp_len - 1;
 
 	debug("count %d ptr %p end %p uptr %p", field_count, ptr, end, uptr);
 
@@ -2168,14 +2169,15 @@ static char *uncompress(int16_t field_count, char *start, char *end,
 		 * tmp buffer.
 		 */
 
-		ulen = strlen(name);
-		strncpy(uptr, name, uncomp_len - (uptr - uncompressed));
+		ulen = strlen(name) + 1;
+		if ((uptr + ulen) > uncomp_end)
+			goto out;
+		strncpy(uptr, name, ulen);
 
 		debug("pos %d ulen %d left %d name %s", pos, ulen,
-			(int)(uncomp_len - (uptr - uncompressed)), uptr);
+			(int)(uncomp_end - (uptr + ulen)), uptr);
 
 		uptr += ulen;
-		*uptr++ = '\0';
 
 		ptr += pos;
 
@@ -2183,6 +2185,10 @@ static char *uncompress(int16_t field_count, char *start, char *end,
 		 * We copy also the fixed portion of the result (type, class,
 		 * ttl, address length and the address)
 		 */
+		if ((uptr + NS_RRFIXEDSZ) > uncomp_end) {
+			debug("uncompressed data too large for buffer");
+			goto out;
+		}
 		memcpy(uptr, ptr, NS_RRFIXEDSZ);
 
 		dns_type = uptr[0] << 8 | uptr[1];
@@ -2214,7 +2220,7 @@ static char *uncompress(int16_t field_count, char *start, char *end,
 		} else if (dns_type == ns_t_a || dns_type == ns_t_aaaa) {
 			dlen = uptr[-2] << 8 | uptr[-1];
 
-			if (ptr + dlen > end) {
+			if ((ptr + dlen) > end || (uptr + dlen) > uncomp_end) {
 				debug("data len %d too long", dlen);
 				goto out;
 			}
@@ -2253,6 +2259,10 @@ static char *uncompress(int16_t field_count, char *start, char *end,
 			 * refresh interval, retry interval, expiration
 			 * limit and minimum ttl). They are 20 bytes long.
 			 */
+			if ((uptr + 20) > uncomp_end || (ptr + 20) > end) {
+				debug("soa record too long");
+				goto out;
+			}
 			memcpy(uptr, ptr, 20);
 			uptr += 20;
 			ptr += 20;
@@ -2322,6 +2332,12 @@ static int forward_dns_reply(unsigned char *reply, int reply_len, int protocol,
 
 	if (offset < 0)
 		return offset;
+	if (reply_len < 0)
+		return -EINVAL;
+	if (reply_len < offset + 1)
+		return -EINVAL;
+	if ((size_t)reply_len < sizeof(struct domain_hdr))
+		return -EINVAL;
 
 	hdr = (void *)(reply + offset);
 	dns_id = reply[offset] | reply[offset + 1] << 8;
@@ -2357,23 +2373,31 @@ static int forward_dns_reply(unsigned char *reply, int reply_len, int protocol,
 		 */
 		if (req->append_domain && ntohs(hdr->qdcount) == 1) {
 			uint16_t domain_len = 0;
-			uint16_t header_len;
+			uint16_t header_len, payload_len;
 			uint16_t dns_type, dns_class;
 			uint8_t host_len, dns_type_pos;
 			char uncompressed[NS_MAXDNAME], *uptr;
 			char *ptr, *eom = (char *)reply + reply_len;
+			char *domain;
 
 			/*
 			 * ptr points to the first char of the hostname.
 			 * ->hostname.domain.net
 			 */
 			header_len = offset + sizeof(struct domain_hdr);
+			if (reply_len < header_len)
+				return -EINVAL;
+			payload_len = reply_len - header_len;
+
 			ptr = (char *)reply + header_len;
 
 			host_len = *ptr;
+			domain = ptr + 1 + host_len;
+			if (domain > eom)
+				return -EINVAL;
+
 			if (host_len > 0)
-				domain_len = strnlen(ptr + 1 + host_len,
-						reply_len - header_len);
+				domain_len = strnlen(domain, eom - domain);
 
 			/*
 			 * If the query type is anything other than A or AAAA,
@@ -2382,6 +2406,8 @@ static int forward_dns_reply(unsigned char *reply, int reply_len, int protocol,
 			 */
 			dns_type_pos = host_len + 1 + domain_len + 1;
 
+			if (ptr + (dns_type_pos + 3) > eom)
+				return -EINVAL;
 			dns_type = ptr[dns_type_pos] << 8 |
 							ptr[dns_type_pos + 1];
 			dns_class = ptr[dns_type_pos + 2] << 8 |
@@ -2411,6 +2437,8 @@ static int forward_dns_reply(unsigned char *reply, int reply_len, int protocol,
 				int new_len, fixed_len;
 				char *answers;
 
+				if (len > payload_len)
+					return -EINVAL;
 				/*
 				 * First copy host (without domain name) into
 				 * tmp buffer.
@@ -2425,6 +2453,8 @@ static int forward_dns_reply(unsigned char *reply, int reply_len, int protocol,
 				 * Copy type and class fields of the question.
 				 */
 				ptr += len + domain_len + 1;
+				if (ptr + NS_QFIXEDSZ > eom)
+					return -EINVAL;
 				memcpy(uptr, ptr, NS_QFIXEDSZ);
 
 				/*
@@ -2434,6 +2464,8 @@ static int forward_dns_reply(unsigned char *reply, int reply_len, int protocol,
 				uptr += NS_QFIXEDSZ;
 				answers = uptr;
 				fixed_len = answers - uncompressed;
+				if (ptr + offset > eom)
+					return -EINVAL;
 
 				/*
 				 * We then uncompress the result to buffer
@@ -2612,7 +2644,7 @@ static gboolean udp_server_event(GIOChannel *channel, GIOCondition condition,
 							gpointer user_data)
 {
 	unsigned char buf[4096];
-	int sk, err, len;
+	int sk, len;
 	struct server_data *data = user_data;
 
 	if (condition & (G_IO_NVAL | G_IO_ERR | G_IO_HUP)) {
@@ -2624,12 +2656,8 @@ static gboolean udp_server_event(GIOChannel *channel, GIOCondition condition,
 	sk = g_io_channel_unix_get_fd(channel);
 
 	len = recv(sk, buf, sizeof(buf), 0);
-	if (len < 12)
-		return TRUE;
 
-	err = forward_dns_reply(buf, len, IPPROTO_UDP, data);
-	if (err < 0)
-		return TRUE;
+	forward_dns_reply(buf, len, IPPROTO_UDP, data);
 
 	return TRUE;
 }
@@ -2710,13 +2738,20 @@ hangup:
 			}
 		}
 
+		/*
+		 * Remove the G_IO_OUT flag from the watch, otherwise we end
+		 * up in a busy loop, because the socket is constantly writable.
+		 *
+		 * There seems to be no better way in g_io to do that than
+		 * re-adding the watch.
+		 */
+		g_source_remove(server->watch);
+		server->watch = g_io_add_watch(server->channel,
+			G_IO_IN | G_IO_HUP | G_IO_NVAL | G_IO_ERR,
+			tcp_server_event, server);
+
 		server->connected = true;
 		server_list = g_slist_append(server_list, server);
-
-		if (server->timeout > 0) {
-			g_source_remove(server->timeout);
-			server->timeout = 0;
-		}
 
 		for (list = request_list; list; ) {
 			struct request_data *req = list->data;

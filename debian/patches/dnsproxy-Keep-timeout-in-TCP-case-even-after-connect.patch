@@ -1,0 +1,37 @@
+From: Matthias Gerstner <mgerstner@suse.de>
+Date: Tue, 25 Jan 2022 10:00:26 +0100
+Subject: dnsproxy: Keep timeout in TCP case even after connection is
+ established
+Origin: https://git.kernel.org/pub/scm/network/connman/connman.git/commit?id=5c34313a196515c80fe78a2862ad78174b985be5
+Bug-Debian: https://bugs.debian.org/1004935
+Bug-Debian-Security: https://security-tracker.debian.org/tracker/CVE-2022-23098
+
+If an outgoing TCP connection succeeds but the remote server never sends
+back any data then currently the TCP connection will never be
+terminated by connmand.
+
+To prevent this keep the connection timeout of 30 seconds active even
+after the connection has been established.
+---
+ src/dnsproxy.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/src/dnsproxy.c b/src/dnsproxy.c
+index 1ccf36a95a35..cf1d36c74496 100644
+--- a/src/dnsproxy.c
++++ b/src/dnsproxy.c
+@@ -2375,11 +2375,6 @@ hangup:
+ 		server->connected = true;
+ 		server_list = g_slist_append(server_list, server);
+ 
+-		if (server->timeout > 0) {
+-			g_source_remove(server->timeout);
+-			server->timeout = 0;
+-		}
+-
+ 		for (list = request_list; list; ) {
+ 			struct request_data *req = list->data;
+ 			int status;
+-- 
+2.37.2
+
