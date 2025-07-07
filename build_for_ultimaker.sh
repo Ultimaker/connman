@@ -18,7 +18,8 @@ BUILD_DIR="${BUILD_DIR_TEMPLATE}"
 update_docker_image()
 {
     echo "Building local Docker build environment."
-    docker build ./docker_env -t "${LOCAL_REGISTRY_IMAGE}"
+    # Always build for linux/arm64 regardless of host architecture
+    docker buildx build --platform linux/arm64 --tag "${LOCAL_REGISTRY_IMAGE}" ./docker_env --load
 }
 
 run_in_docker()
